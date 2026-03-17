@@ -1,9 +1,9 @@
 # Go Application Rules
 
 Unified rules derived from:
-- Ben Johnson's gobeyond.dev series on Go application design
-- Mat Ryer's "How I write HTTP services in Go after 13 years"
-- Mitchell Hashimoto's "Advanced Testing with Go" (GopherCon 2017)
+- [Ben Johnson](./benbjohnson_rules.md)'s gobeyond.dev series on Go application design
+- [Mat Ryer](./matryer_rules)'s "https://grafana.com/blog/how-i-write-http-services-in-go-after-13-years/"
+- [Mitchell Hashimoto](./mitchelh_rules.md)'s "https://www.youtube.com/watch?v=8hQG7QlcLBk" (GopherCon 2017)
 
 ---
 
