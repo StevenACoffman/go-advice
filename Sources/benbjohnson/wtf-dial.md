@@ -9,13 +9,12 @@ Ben Johnson
 
 04 Jan 2021
 
-](/web/20251012024039/https://www.gobeyond.dev/author/benbjohnson/)
+](https://web.archive.org/web/20251012024039/https://www.gobeyond.dev/author/benbjohnson/)
 
 *   [](https://web.archive.org/web/20251012024039/https://twitter.com/share?text=Introducing%20WTF%20Dial%20(again)&url=https://www.gobeyond.dev/wtf-dial/ "Share on Twitter")
 *   [](https://web.archive.org/web/20251012024039/https://www.facebook.com/sharer/sharer.php?u=https://www.gobeyond.dev/wtf-dial/ "Share on Facebook")
 *   [](https://web.archive.org/web/20251012024039/https://www.linkedin.com/shareArticle?mini=true&url=https://www.gobeyond.dev/wtf-dial/&title=Introducing%20WTF%20Dial%20(again) "Share on LinkedIn")
 *   [](https://web.archive.org/web/20251012024039/mailto:/?subject=Introducing%20WTF%20Dial%20(again)&body=https://www.gobeyond.dev/wtf-dial/ "Share via Email")
-*   [](# "Copy link")
 
 ![](https://web.archive.org/web/20251012024039im_/https://www.gobeyond.dev/content/images/2020/12/2020-12-28-12.50.50.gif)
 

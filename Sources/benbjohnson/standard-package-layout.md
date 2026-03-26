@@ -7,7 +7,7 @@ Ben Johnson
 
 10 Aug 2016
 
-](/web/20250915154151/https://www.gobeyond.dev/author/benbjohnson/)
+](https://web.archive.org/web/web/20250915154151/https://www.gobeyond.dev/author/benbjohnson/)
 
 *   [](https://web.archive.org/web/20250915154151/https://twitter.com/share?text=Standard%20Package%20Layout&url=https://www.gobeyond.dev/standard-package-layout/ "Share on Twitter")
 *   [](https://web.archive.org/web/20250915154151/https://www.facebook.com/sharer/sharer.php?u=https://www.gobeyond.dev/standard-package-layout/ "Share on Facebook")

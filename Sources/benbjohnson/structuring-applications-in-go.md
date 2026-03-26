@@ -7,7 +7,7 @@ Ben Johnson
 
 06 Jul 2014
 
-](/web/20250915153044/https://www.gobeyond.dev/author/benbjohnson/)
+](https://web.archive.org/web/20250915153044/https://www.gobeyond.dev/author/benbjohnson/)
 
 *   [](https://web.archive.org/web/20250915153044/https://twitter.com/share?text=Structuring%20Applications%20in%20Go&url=https://www.gobeyond.dev/structuring-applications/ "Share on Twitter")
 *   [](https://web.archive.org/web/20250915153044/https://www.facebook.com/sharer/sharer.php?u=https://www.gobeyond.dev/structuring-applications/ "Share on Facebook")
