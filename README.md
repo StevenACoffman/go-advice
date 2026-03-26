@@ -1,6 +1,34 @@
+# Go Developer Advice
 
+This repo contains a curated distillation of the best advice I have encountered, and that I give to any aspiring (Go) developers I mentor.
 
+The [./summary_rules.md](./summary_rules.md) is distilled from:
++ [Ben Johnson](./Sources/benbjohnson_rules.md), from his defunct gobeyond.dev site: 
+  + [crud](./Sources/benbjohnson/crud.md)
+  + [failure-is-your-domain.md](./Sources/benbjohnson/failure-is-your-domain.md)
+  + [packages-as-layers.md](./Sources/benbjohnson/packages-as-layers.md)
+  + [real-world-sql-part-one.md](./Sources/benbjohnson/real-world-sql-part-one.md)
+  + [standard-package-layout.md](./Sources/benbjohnson/standard-package-layout.md)
+  + [structuring-applications-in-go.md](./Sources/benbjohnson/structuring-applications-in-go.md)
+  + [structuring-tests-in-go.md](./Sources/benbjohnson/structuring-tests-in-go.md)
+  + [wtf-dial.md](./Sources/benbjohnson/wtf-dial.md)
++ [Gary Bernhardt](./Sources/gbernhardt_rules.md) from:
+  + [functional core / imperative shell](./Sources/gbernhardt/bernhardt-functional-core-imperative-shell.md)
++ [Mat Ryer](./Sources/matryer_rules.md) from:
+  + [How I Write HTTP Services in Go after 13 years](https://grafana.com/blog/how-i-write-http-services-in-go-after-13-years/)
++ [Michael Feathers](./Sources/mfeathers_rules.md) from:
+  + [YOW 2016 Testing Patience](./Sources/mfeathers/yow-2016-michael-feathers-testing-patience.md)
+  + [Geekfest Testing Patience](./Sources/mfeathers/geekfest-michael-feathers-testing-patience.md)
+  + [Testing Patience Slides](./Sources/mfeathers/Feathers-TestingPatience.pdf)
++ [Mitchell Hashimoto](./Sources/mitchellh_rules.md) from:
+  + [GopherCon 2017 Advanced Testing with Go](https://www.youtube.com/watch?v=8hQG7QlcLBk) 
+  + [GopherCon 2017 Advanced Testing with Go Slides](./Sources/mitchellh/Advanced_Testing_with_Go.pdf)
++ [Martin Kleppmann](./Sources/kleppmann_rules.md) from:
+  + [Designing Data-Intensive Applications, 2nd Edition](https://www.oreilly.com/library/view/designing-data-intensive-applications/9781098119058/)
++ [John Ousterhout](./Sources/ousterhout_rules.md) from:
+  + [A Philosophy of Software Design, 2nd Edition](https://www.amazon.com/dp/173210221X) 
 
+The following resources are highly recommended, but are not yet incorporated into the distillation.
 
 ### Data Science Resources
 
