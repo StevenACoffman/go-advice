@@ -558,12 +558,12 @@ wg.Wait()
 
 **Do not:**
 - Use an ORM — use `database/sql` directly.
-- Expose transactions to callers of a service — they are an implementation detail.
+- Expose transactions to callers of a service — they are an implementation detail; `*Tx` or `*sql.Tx` must not appear in service method signatures.
+- Omit `defer tx.Rollback()` immediately after a successful `BeginTx` — without it a failed commit or a panic leaves the transaction open and holds database locks.
 - Interpolate caller-supplied strings into SQL queries.
 - Allow arbitrary sort columns from callers — map a fixed set of named values to SQL.
 - Initialize result slices with `var` — nil slices encode as JSON `null`; use `make([]*T, 0)`.
-- Use offset-based pagination (`LIMIT n OFFSET k`) — skips or duplicates rows under concurrent writes.
-- Issue one query per record to load related data (N+1) — use JOINs or batch fetches.
+- Issue one query per record to load related data (N+1) when using a remote database — batch the association load or use a JOIN; per-record loading is acceptable only for embedded databases where each call has negligible round-trip cost.
 - Use a relational database as a message queue — polling causes table-scan load and lock contention.
 
 ### Transaction boundary pattern
@@ -626,8 +626,8 @@ if v := filter.Email; v != nil { where = append(where, "email = ?"); args = appe
 
 // COUNT(*) OVER() returns total count on every row without a second query
 query := `SELECT id, name, email, COUNT(*) OVER() FROM users WHERE ` +
-    strings.Join(where, " AND ") + ` ORDER BY ` + orderBy + ` LIMIT ? OFFSET ?`
-args = append(args, filter.Limit, filter.Offset)
+    strings.Join(where, " AND ") + ` ORDER BY ` + orderBy + ` LIMIT ?`
+args = append(args, filter.Limit)
 ```
 
 ### Sort order: fixed named values only
@@ -648,7 +648,9 @@ fragments. Always provide a safe default.
 
 Use a dedicated `attachXAssociations` helper after the primary query — reusable across
 `FindByID` and `FindMany`. Always return parent associations; include child collections only
-when they are small and almost always needed.
+when they are small and almost always needed. When using a remote database server, batch the
+association queries rather than issuing one query per record; per-record is acceptable for
+embedded databases (e.g., SQLite) where each query has negligible round-trip cost.
 
 ```go
 func (s *DialService) FindDials(ctx context.Context, filter myapp.DialFilter) ([]*myapp.Dial, int, error) {
@@ -686,6 +688,43 @@ SELECT id, name FROM dials WHERE user_id = ? AND id > ? ORDER BY id ASC LIMIT ?
 
 Offset-based (`LIMIT n OFFSET k`) skips rows inserted between fetches and returns
 inconsistent results when rows are deleted — avoid it.
+
+### Transaction isolation
+
+Default database isolation ("read committed" in most databases) does **not** prevent write
+skew. Write skew: two concurrent transactions each read a value, make a decision based on it,
+and write back — but together their writes violate a constraint that each read independently.
+Examples: double-booking a seat, overdrafting an account, two users each grabbing the last
+item.
+
+- Use **serializable isolation** (PostgreSQL `SERIALIZABLE`, SSI in CockroachDB) for any
+  operation that follows a "check then act" pattern across multiple records. Snapshot isolation
+  (`REPEATABLE READ`) prevents non-repeatable reads but does **not** prevent write skew on
+  multi-row checks.
+- Prefer **Serializable Snapshot Isolation (SSI)** over two-phase locking (2PL). SSI detects
+  conflicts at commit time with a small performance overhead; 2PL blocks readers under
+  contention.
+- Use **atomic operations** (`UPDATE counter = counter + 1`) instead of read-modify-write
+  cycles in application code. ORMs make it easy to accidentally produce unsafe
+  read-modify-write cycles.
+- Keep transactions **short**. Long-running read-write transactions under SSI accumulate a
+  large conflict footprint and have much higher abort rates. Perform expensive computation
+  outside the transaction; use the result as input to a short transactional step.
+- **Retry** transactions that fail with a serialization or deadlock error using exponential
+  backoff. Distinguish transient failures (retry) from permanent errors (constraint violation
+  — do not retry).
+- For operations that clients may retry (e.g., after a network timeout where the commit
+  succeeded but the response was lost), persist a unique **idempotency key** in the same
+  transaction. On retry, look up the key first and return the cached result instead of
+  re-executing.
+
+| Hazard | Prevented by |
+|---|---|
+| Dirty reads / writes | Read committed (default in most DBs) |
+| Non-repeatable reads | Snapshot isolation (Repeatable Read) |
+| Lost updates (concurrent increment) | Atomic ops or explicit `SELECT FOR UPDATE` |
+| Write skew (multi-row check then act) | Serializable only |
+| Phantom reads | Serializable only |
 
 ---
 
@@ -1250,13 +1289,16 @@ When a function is too entangled to open a seam: write new behavior as a new, st
 - Classify errors as retryable (timeouts, 503) or non-retryable (400, 404) before writing retry logic.
 - Implement circuit breakers around external service calls.
 - Implement bulkheads (separate goroutine limits or semaphores per upstream) so one slow dependency cannot exhaust all capacity.
+- Implement **backpressure**: when a consumer cannot keep up with a producer's rate, signal the producer to slow down rather than buffering unboundedly. Unbounded queues mask overload and cause OOM crashes.
+- Be aware of **tail latency amplification** in fan-out requests. If each backend has a p99 latency of 200ms independently, a request that calls 100 backends in parallel will hit that latency on ~63% of requests — even though any single backend shows it only 1% of the time. Mitigations: bound fan-out; hedge requests (issue a small number in parallel and take the first response); set per-backend timeouts so one slow node does not hold everything.
+- Guard against **cross-channel timing races**: writing data to storage and then sending a notification (email, push, message queue) via a different channel can cause the consumer to read from a lagging replica and miss the data the notification is about. Options: use linearizable storage, embed the essential data directly in the notification payload, or pass a `min_version`/etag that the consumer must wait for before proceeding.
 
 ### Transactions
 
 Know your database's actual isolation level. PostgreSQL defaults to Read Committed. MySQL InnoDB's "Repeatable Read" is actually Snapshot Isolation. Do not infer semantics from the name.
 
 - Use atomic write operations (`UPDATE counter = counter + 1`) instead of read-modify-write cycles where possible.
-- Use `SELECT FOR UPDATE` for read-modify-write cycles when you must lock rows read, not just rows written.
+- Use `SELECT FOR UPDATE` when you must lock rows read during a read-modify-write cycle at sub-serializable isolation. Do not use it as a substitute for thinking about whether serializable isolation is needed — it locks rows but does not prevent all write skew. Lock the minimum number of rows for the minimum duration.
 - Use Serializable isolation to prevent write skew. **Snapshot isolation does not prevent write skew.** Write skew: two concurrent transactions each read a condition, each independently decides to write based on it, and together they violate an invariant neither would violate alone.
 - Do not hold transactions open across user interaction.
 - Implement retry logic for aborted transactions (SSI, CAS).
@@ -1282,12 +1324,14 @@ Use the right consistency model for the operation — stronger models cost more.
 ### Replication and consistency
 
 - Use single-leader replication as the default. Multi-leader introduces write conflicts; leaderless introduces staleness.
-- Never use last-write-wins (LWW) when data loss is unacceptable — LWW silently discards concurrent writes.
+- Do not use asynchronous replication for data you cannot afford to lose. If the leader fails after acknowledging a write but before it replicates, that write is permanently lost. Use semi-synchronous replication (at least one follower acknowledged) for critical data.
+- Never use last-write-wins (LWW) when data loss is unacceptable — LWW silently discards the losing concurrent write even though it was acknowledged.
 - Use fencing tokens with distributed locks. A fencing token is a monotonically increasing number issued each time the lock is granted. Every write to a shared resource must include the current token; the resource rejects writes with a lower token. Without fencing tokens, two nodes can both believe they hold the lock.
 - Do not roll your own consensus protocol. Use ZooKeeper, etcd, or Consul (Raft/ZAB) for leader election, distributed locks, and coordinated configuration.
 - Implement read-your-own-writes for any data the user just wrote — users should not see their own submitted data disappear.
 - Implement monotonic reads (always read from the same replica for a session) to prevent time travel — a user refreshing a page and seeing older data than they saw before.
 - Implement consistent prefix reads to prevent causality violations — a user seeing a reply before the original message.
+- Use the **outbox pattern** when propagating changes via CDC: write to a dedicated outbox table within the same transaction as the domain change; point CDC at the outbox table, not the internal domain tables. This keeps CDC event schema stable — internal table renames no longer break downstream consumers.
 
 ### Partitioning
 
@@ -1303,9 +1347,15 @@ partition strategy determines the system's scalability ceiling and query pattern
 
 ### Batch and stream processing
 
+- Every index, cache, and materialized view encodes a **write path vs. read path trade-off**: updating an index at write time reduces work at read time. Moving computation to the write path lowers read latency but increases write cost and storage. Choose deliberately, not by default.
 - Use **batch processing** (Spark, Hive) for high-throughput transformations on bounded datasets — historical data, ETL, report generation. Batch systems retry failed tasks automatically and produce deterministic output.
 - Use **stream processing** (Kafka Streams, Flink) for unbounded data requiring low latency — event-driven pipelines, real-time analytics, alerting, materialized view maintenance.
-- Use Kafka as the durable, replayable log between producers and consumers. Because Kafka retains messages, consumers can replay from any offset, enabling reprocessing without touching the source system.
+- Choose the message broker model that matches the workload:
+  - **Log-based** (Kafka, Kinesis): durable, ordered within a partition, replayable, fan-out to multiple consumer groups. Use when ordering matters, consumers need replay, or the workload involves CDC/event sourcing.
+  - **AMQP/task-queue** (RabbitMQ, SQS): message deleted after acknowledgment; parallelism at individual-message level. Use when messages are expensive to process (any worker can pick any message), ordering is unimportant, and replay is not needed.
+  - Do not treat log-based brokers as drop-in replacements for task queues without redesigning for partition-level parallelism.
+- Configure a **dead letter queue (DLQ)** on every production consumer. A malformed message causes crash → redeliver → crash → loop, blocking all subsequent messages on an ordered partition. After a configurable number of retries (3–5), route to the DLQ and continue. Monitor DLQs: any message there is an incident requiring investigation.
+- Do not query a remote database inside a stream processor's hot path — this is slow and risks overloading the database. Instead, subscribe to a CDC stream of that table and maintain a local read-only copy inside the stream processor (stream-table join via local state store).
 - Use the **log-structured approach** (append-only event log) as the source of truth. Derive all other views from the log. This enables recomputing any derived state from scratch.
 - Use **event time** (when the event occurred) rather than **processing time** (when it arrived) for windowed aggregations. Late-arriving events are common; processing-time windows produce incorrect results for out-of-order data.
 - Use **watermarks** to decide when a window is complete enough to emit results. A watermark is an estimate of how far behind the slowest event is — setting it too tight drops late events; too loose increases output latency.
@@ -1326,10 +1376,33 @@ partition strategy determines the system's scalability ceiling and query pattern
 
 ### Derived data and CDC
 
-- Do not write to two systems simultaneously (dual write) — use change data capture (CDC).
+- Do not write to two systems simultaneously (dual write) — use change data capture (CDC). See the outbox pattern in "Replication and consistency" for how to implement CDC without dual-write races.
 - Treat the event log as the source of truth. Caches, search indexes, and analytics tables are derived views that can be rebuilt by replaying the log.
 - Design CDC consumers to be idempotent — the log may replay events on consumer restart.
+- Generate a unique **request ID** for every user-initiated operation and propagate it through every service call and database write. Store it alongside the operation result in the same transaction. On client retry, look up the ID and return the stored result rather than re-executing. A `UNIQUE` constraint on `request_id` is sufficient: a duplicate insert fails and the transaction aborts.
+- Separate **notification of success** from **execution of the operation**. Inform the user synchronously ("your payment is processing"); complete side effects (email, webhook, ledger update) asynchronously after all consistency checks pass.
 - Use the saga pattern (compensating transactions) instead of 2PC for long-running multi-service operations. Each step is a local transaction; on failure, idempotent compensating transactions undo prior steps. Intermediate states are visible to concurrent transactions — design for that.
+- Do not implement business logic in stored procedures. They are hard to test, version, and debug. Keep stateless logic in application servers; keep only state management in the database.
+
+### Timeliness vs. integrity
+
+"Consistency" conflates two distinct properties. Confusing them leads to over-engineering (paying for timeliness you don't need) or under-engineering (missing integrity guarantees that matter).
+
+- **Timeliness**: users observe up-to-date state. Violations are temporary — waiting and retrying resolves them. The CAP theorem's "C" and linearizability are timeliness properties.
+- **Integrity**: no data is lost, doubled, or corrupted. Violations are permanent and require explicit detection and repair. ACID atomicity and durability are integrity properties.
+- Prioritize integrity over timeliness. A statement that takes 24 hours to reflect a transaction is annoying (timeliness violation). A statement where the sum of transactions does not equal the balance is catastrophic (integrity violation).
+- Event-driven / stream-based systems naturally sacrifice timeliness (reads may be stale) while preserving integrity (exactly-once delivery, idempotent consumers). This is usually the correct trade-off.
+- **Compensating transactions** ("apology workflows") are a valid pattern when the cost of occasionally violating a constraint is low and recoverable — refund, upgrade, apology email. Accept the write optimistically and check the constraint after the fact. Airlines, hotels, and banks operate this way deliberately. Do not use strict synchronous coordination (2PC, distributed locks) for constraints the business already handles with apologies.
+
+### Durable execution
+
+When a business process spans multiple services and each step must execute exactly once despite failures, durable execution eliminates the need to hand-roll retry and idempotency logic across the entire call graph.
+
+- Use a **durable execution framework** (Temporal, Restate) for workflows that involve multiple external service calls (payment gateways, email providers, third-party APIs) where partial execution is unacceptable — credit card charged but bank account not credited.
+- Durable execution works by logging every RPC call and its result to durable storage. On failure and re-execution, the framework replays the log, skipping already-completed steps and returning their cached results.
+- Write workflow code to be **deterministic**: same inputs must produce the same sequence of calls in the same order. Do not use `time.Now()`, `rand`, or any non-deterministic call inside workflow code — use the framework's own deterministic wrappers.
+- Do not reorder or add/remove function calls in an existing workflow definition that may have in-flight executions. The framework replays old executions using the current code; reordering breaks them. Deploy new workflow logic as a new workflow version and let old executions drain.
+- External services called from workflows must still expose **idempotent APIs** with unique request IDs — durable execution re-executes tasks on failure and a non-idempotent external service will still produce duplicate actions.
 
 ### Encoding
 

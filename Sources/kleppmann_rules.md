@@ -233,11 +233,19 @@ has specific failure modes that must be handled explicitly in application code.
   committed writes; those writes are permanently lost and the former leader's log will
   conflict if it rejoins. If you enable it, consumers must tolerate duplicate or missing
   messages across the leadership transition.
-- **Do not** use **Last Write Wins (LWW)** for conflict resolution on mutable records.
-  LWW silently discards the losing concurrent write even though it was successfully
-  acknowledged. LWW is only safe for insert-only or naturally idempotent data. For
-  mutable shared data, use a merge strategy or route all writes for a record to a single
-  leader (conflict avoidance).
+- **Do not** use **Last Write Wins (LWW)** with wall-clock timestamps for conflict
+  resolution on mutable records. It has three distinct failure modes:
+  1. **Silent data loss from clock skew**: a node with a lagging clock cannot overwrite
+     values previously written by a node with a faster clock until the skew resolves —
+     writes from the lagging node are silently dropped with no error to the application.
+  2. **Inability to distinguish causally ordered from concurrent writes**: if client B
+     increments a value written by client A but B's timestamp is earlier due to skew,
+     LWW discards B's increment — the causally later write loses.
+  3. **Timestamp collisions**: at millisecond clock resolution, two independent writers
+     can produce the same timestamp; any tiebreaker (random number) may itself violate
+     causality.
+  LWW is only safe for insert-only or naturally idempotent data. For mutable shared data,
+  use a merge strategy or route all writes for a record to a single leader (conflict avoidance).
 - **Do** use **CRDTs (Conflict-free Replicated Data Types)** or **Operational
   Transformation** libraries (Automerge, Yjs) for collaborative real-time editing where
   concurrent writes must be automatically merged without losing any user's intent.
@@ -350,6 +358,12 @@ normal, not exceptional.
 - **Do not** assume a short timeout is safe. Declaring a node dead when it is merely slow
   and transferring its load to other nodes can cause a **cascading failure** — now all
   nodes are overloaded.
+- **Do** design for **metastable failures**: under severe overload, synchronized retries
+  from many clients can recreate the spike that caused the overload, keeping the system
+  stuck even after the original load is reduced. A system in this state requires manual
+  intervention (restart or shedding load externally) to recover. Prevention: exponential
+  backoff with jitter on all retries, circuit breakers that stop retrying a failing service,
+  and load shedding before the queue depth makes recovery impossible.
 - **Do** implement **circuit breakers**: when a downstream service has failed or timed out
   repeatedly, stop sending it requests for a cooldown period rather than continuing to
   hammer it. This gives the downstream service time to recover and prevents the caller's
@@ -394,6 +408,14 @@ normal, not exceptional.
 - **Do not** assume TCP guarantees end-to-end correctness. TCP prevents corruption within
   a single connection; it does not prevent a server from processing a request and crashing
   before acknowledging it, or a client retrying and sending the request twice.
+- **Do** use **deterministic simulation testing (DST)** as a complement to fault injection.
+  DST runs your actual code (not a model) through a large number of randomized executions
+  in which network delays, I/O, and clock timing are all controlled by the simulator. This
+  lets the simulator explore far more scenarios than hand-written tests, including scenarios
+  that rarely occur in practice. Crucially, when a failure is found, the exact sequence of
+  operations can be replayed — unlike chaos engineering, which has no record of what
+  triggered the failure. FoundationDB, TigerBeetle, and Antithesis use DST to find bugs
+  that fault injection cannot reproducibly exercise.
 
 ---
 
@@ -418,8 +440,11 @@ only a consensus algorithm provides safety guarantees.
 - **Do** understand what your database actually guarantees. "ACID compliant" is a
   marketing term; verify the specific isolation level and consistency guarantee.
 - **Do** route all writes that must enforce a uniqueness constraint to a **single
-  partition or shard** (keyed by the unique value, e.g., username). This avoids requiring
-  cross-shard consensus on every write.
+  partition or shard** (keyed by the unique value, e.g., username). A stream processor
+  consuming that shard sequentially on a single thread can enforce the constraint
+  deterministically and without cross-shard coordination: for each request, check a local
+  database of claimed values; emit a success or rejection message to an output stream.
+  This scales by increasing the number of shards — each shard is processed independently.
 - **Do** understand the costs of consensus before reaching for it:
   - Requires a **strict majority** to operate: 3 nodes to tolerate 1 failure, 5 nodes
     to tolerate 2. You cannot run consensus with 2 nodes.
@@ -567,6 +592,14 @@ provides complete end-to-end correctness. Each layer protects only within its sc
 - **Do not** implement business logic in stored procedures. They are hard to test, version,
   deploy, and debug. Keep stateless logic in application servers; keep only state management
   in the database.
+- **Do** use **sharded logs + stream processors** to enforce constraints across multiple
+  shards without distributed transactions (2PC). Example — a funds transfer that must
+  check a source account balance and atomically debit and credit two accounts on
+  different shards: (1) write the transfer request to a log shard; (2) a stream processor
+  reads the shard, checks the constraint against local state, and emits events to per-account
+  output shards; (3) per-account processors apply the debit/credit idempotently.
+  Each step is a local operation; the log provides ordering; idempotency handles retries.
+  This gives equivalent correctness to a cross-shard transaction at much higher throughput.
 
 ---
 
