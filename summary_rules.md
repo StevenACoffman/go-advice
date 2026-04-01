@@ -1,14 +1,19 @@
 # Go Code Guidelines: Unified Summary
 
 Synthesized from Ben Johnson, Gary Bernhardt, Mat Ryer, Michael Feathers, Mitchell Hashimoto,
-Martin Kleppmann, and John Ousterhout.
+Martin Kleppmann, John Ousterhout, Gregor Hohpe, Bobby Woolf, the SRE Book authors
+(Betsy Beyer, Chris Jones, Jennifer Petoff, Niall Richard Murphy), and Go CLI command patterns
+(stdlib, ff/v4, Cobra).
 
-**Five organizing principles:**
+**Eight organizing principles:**
 1. Complexity is the enemy — reduce it, hide it, push it down.
 2. Separate computation from mutation. Pure core; thin imperative shell.
 3. Dependencies are explicit. No globals; no hidden state.
 4. Data systems fail in predictable ways — design for the failure modes, not the happy path.
 5. Tests are a design tool, not a coverage metric.
+6. Integration coupling is multi-dimensional — couple by accident, decouple with intent, and name which dimensions changed.
+7. Reliability is a feature — measure it, budget for it, and protect the engineering capacity to improve it.
+8. A CLI is a composition root — `main` wires dependencies; commands dispatch work; neither owns business logic.
 
 ---
 
@@ -1482,7 +1487,347 @@ Code is obvious when a reader's first guess about its behavior is correct.
 
 ---
 
-## 16. Checklist
+## 16. Integration Patterns
+
+*(Hohpe & Woolf)*
+
+### Choose the integration style before designing the interface
+
+The four integration styles produce fundamentally different coupling profiles. Choosing late usually means choosing RPC, which looks simplest and ages worst.
+
+| Style | Best for | Cost |
+|---|---|---|
+| Messaging | Independent availability, retry, load distribution, traffic buffering | Higher complexity; requires broker |
+| RPC | Synchronous answer needed before caller can proceed | Tightly couples caller and callee lifetimes |
+| Shared Database | Multiple systems needing the same transaction | Every consumer depends on the schema — hidden coupling |
+| File Transfer | Bulk batch exchange where latency is not critical | High latency; missed transfer requires manual recovery |
+
+Two properties make messaging work: **send and forget** (sender hands message to channel without waiting for receiver) and **store and forward** (channel persists messages until receiver is available). Without both, you have asynchronous-looking RPC.
+
+**Do not** default to RPC because it "looks like a function call". The caller blocks, the call fails atomically with the callee, and retry must be added by hand.
+
+> **Red flag — Accidental synchrony**: an asynchronous system reimplemented as a sequence of blocking calls. You paid the cost of messaging and got the coupling of RPC.
+
+### Coupling is multi-dimensional
+
+Coupling has eight distinct dimensions. A system can be loosely coupled on one and tightly coupled on another — the combination determines actual fragility:
+
+| Dimension | Change that propagates | Mitigation |
+|---|---|---|
+| Technology | Language / framework / library version | Standard wire formats (JSON, Protobuf) |
+| Location | Recipient moves to a new address or scales out | Logical channel names instead of IP / hostname |
+| Topology | Intermediary inserted; recipient added or removed | Topology-decoupled channels; intermediary insertion without changing sender |
+| Data format | Field renamed, repositioned, added, or removed | Tagged formats (JSON, XML); Message Translator at the boundary |
+| Semantic | Agreed field name but not its meaning | Canonical Data Model; explicit documented contracts |
+| Conversation | Message order, retry rules, or timeout behavior assumed | Explicit protocol; Idempotent Receiver |
+| Order | Receiver assumes messages arrive in sequence | Design for out-of-order tolerance; Resequencer only when required |
+| Temporal | Slow / unavailable provider blocks requester | Asynchronous messaging; graceful degradation |
+
+- **Do** identify which coupling dimensions are most likely to cause a production incident before choosing the integration style. A coupling analysis is more useful than a blanket "loosely coupled" claim.
+- **Do** prefer logical addressing. Location-coupling spectrum from tight to loose: `Hard-coded addresses → Host Names / URLs → Logical Names → Topics → Content filtering → Explicit Composition`. Moving toward the loose end enables **composability** — an intermediary (translator, tap, load balancer) can be inserted without changing the sender. The extreme end shifts all change dependency to an assembler that becomes a maintenance bottleneck.
+- The appropriate level of coupling depends on the level of control over the endpoints. When you own all components and have full automation, some coupling is acceptable.
+- **Warning — Hidden coupling**: a topology-decoupled serverless application whose event payload is source-specific forces all consumers to change when the source changes — topological decoupling voided by data-format coupling. Name the remaining coupling dimension explicitly; do not declare a system "loosely coupled" because one dimension improved.
+
+### Keep application code unaware of messaging
+
+Business logic must not know about channels, message headers, broker APIs, or delivery semantics.
+
+- **Do** wrap all outbound messaging behind a **Messaging Gateway** — an interface whose methods express domain intent (`SubmitOrder(ctx, order)`) not messaging primitives (`Publish(ctx, channel, body)`). The real implementation uses the broker; the test implementation invokes callbacks synchronously with no broker required.
+- **Do** handle all inbound messages through a **Service Activator** — a thin adapter that reads a message from a channel and calls domain logic. Domain logic does not know it was invoked via a message.
+- **Do not** let message headers, correlation IDs, or broker-specific concepts leak into domain objects.
+
+### Channel and message patterns
+
+**Channel types:**
+- **Point-to-Point**: each message consumed by exactly one receiver. Use for commands, work items, and load-balanced processing (Competing Consumers).
+- **Publish-Subscribe**: each message delivered to all subscribers. Use when multiple independent consumers need the same event.
+- **Dead Letter**: receives messages that fail processing after all retries. Configure on every production consumer — a failing message in an ordered partition causes crash → redeliver → crash loops.
+- **Guaranteed Delivery**: persists messages until acknowledged. Without this, broker restarts lose messages.
+
+**Message construction:**
+- Include a globally unique **Message ID** and a **Correlation ID** (echoed from the requesting message) in every message. These are prerequisites for deduplication and request-reply correlation.
+- Set a **TTL / Expiration** on time-sensitive messages. Stale messages with no TTL accumulate in queues and may be processed long after they are relevant.
+- Use a **Return Address** header for request-reply — the channel on which the receiver should send its response.
+
+**Message routing:**
+- **Content-Based Router**: routes each message to a channel based on message content. The router knows all consumers — central knowledge required.
+- **Message Filter**: each consumer subscribes with filter criteria; only matching messages are delivered. The consumer controls what it receives — no central knowledge required.
+- **Splitter → Aggregator**: split one message into N sub-messages for parallel processing; collect N responses into one reply. Track correlation and handle timeouts for partial results.
+- **Process Manager (Saga)**: for long-running multi-step workflows where each step sends a message. The Process Manager tracks completed steps and what comes next. Required when the workflow cannot complete in one transaction or fit in memory.
+
+**Message transformation:**
+- **Message Translator**: adapts message formats at the boundary between systems. Never let format differences propagate into shared domain logic.
+- **Canonical Data Model**: one neutral schema shared by all systems; translators convert to/from it at the boundary. Reduces N×(N−1) translator pairs to 2×N at the cost of maintaining the neutral schema.
+
+**Idempotency:**
+- **Idempotent Receiver**: every consumer must tolerate receiving the same message more than once. Store a processed message ID persistently before executing. In-memory deduplication is lost on restart.
+
+### Event-driven architectures and coupling
+
+- Events are messages; the word "event" describes message semantics, not the interaction style.
+- **Most EDA decoupling derives from Publish-Subscribe channels, not event semantics.** A command message on a Pub/Sub channel gains the same topological benefits.
+- **Pub/Sub coupling is asymmetric**: adding a subscriber does not require changing the publisher. Most valuable when you do not control the publisher.
+- **Recipient List ≠ Pub/Sub**: AWS EventBridge rules and targets act as a Recipient List — adding a target requires changing a central element. It negates the "subscriber-side freedom" benefit while maintaining the "publisher-side stability" benefit.
+- The big coupling improvement is RPC → messaging (temporal decoupling). The step from messaging to Pub/Sub messaging is smaller.
+- Adding recipients easily makes modifying the system harder: every recipient depends on the event schema. Taking advantage of topology freedom exposes data-format coupling.
+
+> Scattered implicit dependencies are not loose coupling. EDA proponents are often early in the lifecycle; they will not live with the consequences of their coupling decisions.
+
+### Control flow: push, pull, queues, and drivers
+
+Control flow describes which element actively drives the interaction — independently of which direction data flows.
+
+**Atomic roles:**
+
+| Element | Behavior |
+|---|---|
+| **Sender** | Actively pushes data; data and control flow align (left→right) |
+| **Sink** | Passively receives from a Sender |
+| **Source** | Passively provides data; waits to be fetched |
+| **Fetcher** | Actively requests data from a Source; data and control flow face opposite directions |
+
+**Pipeline combinations:**
+
+| Element | Behavior |
+|---|---|
+| **Queue** | Connects a Sender to a Fetcher; inverts control flow; decouples arrival and departure rates |
+| **Driver** | Actively fetches from a Source and actively pushes to a Sink; inverts control flow like a Queue but controls fetch cadence |
+| **Pusher** | Receives from a Sender; pushes processed results to next element; synchronous (each send coincides with a receive) |
+| **Puller** | Fetches from a Source; provides results when a downstream Fetcher requests; synchronous in the same sense |
+
+**Design rules:**
+- A Sender and a Fetcher facing each other need a **Queue** to connect. A Source and a Sink need a **Driver**.
+- A **Driver** rate-limits by adjusting fetch cadence without buffering — when a target is slow, the Driver slows fetching rather than building a backlog. AWS EventBridge Pipes acts as a Driver, which is why it maintains message order and can rate-limit without an explicit queue.
+- **A queue inverts control flow.** This enables traffic shaping — a queue converts a spiky arrival rate into a steady departure rate. Synchronous systems collapse past a load threshold as resources are consumed accepting new requests rather than processing existing ones.
+- Cloud services that appear to push messages (SNS, EventBridge Bus) have internal queues and driver pools. They optimize for throughput, not latency — P90 latency can be 250–500ms.
+- Pull delivery can outperform push despite polling overhead — the receiver controls batch size and polling rate.
+
+### Queue flow control
+
+Queues have finite capacity. Unlimited queues mask overload and cause OOM crashes, long wait times, or stale processing.
+
+- **Little's Law**: average wait time = queue depth ÷ arrival rate. Long queues increase wait time even when the system looks healthy.
+- Three reactive flow control mechanisms:
+  - **TTL (Time-to-Live)**: drop old messages to make room for new ones. Use when message value decays rapidly (data streams, time-sensitive orders).
+  - **Tail drop**: reject new arrivals when the queue is full. Use when existing messages are too valuable to drop; senders need a retry/feedback mechanism.
+  - **Backpressure**: signal upstream systems to reduce the arrival rate (e.g., return HTTP 429; show a "too busy" message). Use when senders can adapt.
+- **Rate limiting (proactive)**: configure a maximum delivery rate before flow control ever engages. Preferable to reactive mechanisms. A Driver implements this by adjusting fetch cadence.
+- Monitor **queue message age**, not just depth. Depth zero with workers processing 24-hour-old messages is a failure state.
+
+> **Red flag — All lights green, system is down**: queue depth is zero, workers are active, error rate is low — but users get stale results because queue age is unbounded. The metric you are not watching is the one that matters.
+
+---
+
+## 17. Site Reliability Engineering
+
+*(Beyer, Jones, Petoff, Murphy)*
+
+### The 50% operational cap
+
+SRE teams that spend more than half their time on operational work — incidents, tickets, manual toil — have no capacity to eliminate the root causes of that work.
+
+- **Do** track the split between engineering work (projects, automation, capacity planning) and operational work (incidents, tickets, manual tasks) every week.
+- **Do** redirect excess pages and tickets to the development team when the SRE team is over the cap. This creates the right incentive for developers to fix reliability at the source rather than externalizing it to SRE.
+- **Do** invoke **"give back the pager"** when a service persistently exceeds the cap and structural fixes require multiple quarters. SRE formally returns on-call responsibility to the development team while both teams work together to make the service operationally sustainable. Without this enforcement mechanism, the 50% cap has no teeth.
+- **Do not** absorb unbounded operational load silently. A team that accepts every interrupt signals that reliability problems have no cost, guaranteeing more of them.
+
+### SLIs, SLOs, and error budgets
+
+- **Service Level Indicator (SLI)**: a specific measurable ratio — successful requests / total requests, latency below threshold, queue depth below limit. Measurable from the user's perspective, not internal instrumentation.
+- **Service Level Objective (SLO)**: a target percentage for an SLI over a rolling window (e.g., 99.9% of requests succeed over 30 days). Strict enough to matter; loose enough to allow shipping.
+- **Error budget**: `(1 − SLO) × window`. At 99.9% over 30 days = 43.8 minutes. Track consumption in real time.
+- **Do not** set SLOs at 100%. 100% eliminates all error budget, halts all risk-taking, and is not achievable.
+- **Reliability has sharply diminishing returns** past the point users can observe. An additional nine of availability can cost 100× the previous one. A user on a 99% reliable smartphone cannot distinguish 99.99% from 99.999% service reliability. Error budgets make this trade-off explicit.
+- When the error budget is healthy, release aggressively. When exhausted, freeze releases and focus on reliability work. This removes subjective negotiation from the reliability conversation.
+- Distinguish the **SLO** (internal target) from the **SLA** (contractual commitment). The SLO must be tighter than the SLA to provide headroom before breaching contractual obligations.
+
+### Alert on symptoms, not causes
+
+Alerting on causes (CPU usage, disk full, process restarts) generates noise and fatigue without tracking what users actually experience.
+
+**Three tiers of monitoring output:**
+1. **Alerts** — page the on-call engineer immediately. Must correspond to a user-visible symptom. Every page that fires without requiring immediate action is alert fatigue.
+2. **Tickets** — action required within days; filed to a queue and prioritized.
+3. **Logs** — forensics only. Never alert from log lines; use metrics for alerting.
+
+**Four golden signals** — the minimum instrumentation for any service:
+1. **Latency** — time to serve a request. Distinguish successful from failed requests; failed requests can skew latency fast.
+2. **Traffic** — demand on the system (RPS, transactions per second).
+3. **Errors** — rate of failed requests: explicit (500s), implicit (wrong content), policy (SLO violations).
+4. **Saturation** — how full the system is; predict utilization before capacity is exhausted.
+
+**Multi-window, multi-burn-rate alerting**: raw SLI violation alerting is too noisy (high false positive) or too slow (high false negative). Use burn-rate alerts:
+- A burn rate of 1 consumes error budget at exactly the SLO rate.
+- Alert at high burn rate (e.g., 14×) over short windows (1h) for fast-burning incidents.
+- Alert at lower burn rate (e.g., 2×) over long windows (6h) for slow-burning degradation.
+
+### Eliminate toil
+
+**Toil** is operational work that is all of: manual, repetitive, automatable, scales O(n) with service growth, and produces no permanent improvement. Toil is distinct from overhead or busywork in general.
+
+- Track toil explicitly. Untracked toil expands to fill all available capacity.
+- When a runbook step is repeated more than twice, automate it.
+- Do not automate a broken process — fix it first, then automate. Automation of a broken process is reliably wrong.
+
+### On-call
+
+- **25% cap**: on-call should consume no more than 25% of a single SRE's time (the remaining 25% of the 50% operational cap covers other reactive work).
+- Structure: **primary** on-call responds to pages; **secondary** acts as backup and handles overflow. Prevents single points of failure.
+- **Follow-the-sun**: rotate on-call responsibility across time zones so no team is permanently on night duty.
+- Minimum team size for sustainable on-call rotation: **8 engineers** (single-site), **6 engineers** (dual-site with follow-the-sun). Smaller teams produce unsustainable schedules.
+- **Operational underload** is also a risk: teams handling fewer than 1–2 significant events per quarter lose incident sharpness. Use Wheel of Misfortune exercises to maintain readiness.
+- An alert that fires but requires no immediate action is a ticket, not an alert. Miscategorized pages are toil.
+
+### Postmortems
+
+- Write a **blameless postmortem** for every incident that breaches the SLO or causes significant user impact.
+- Focus on systemic causes, not individual errors. Blame inhibits honest reporting and prevents organizational learning.
+- Document: timeline, root cause, contributing factors, impact, and action items with owners and due dates.
+- Publish postmortems widely. The value is in organizational learning, not the filing.
+- Distinguish **trigger** (the action that precipitated the incident) from **cause** (the systemic brittleness that made the action dangerous). 70% of outages are caused by changes to live systems — the cause is the fragility that made the change dangerous, not the change itself.
+
+### Incident command
+
+- Assign an **Incident Commander (IC)** at the start of any significant incident. The IC coordinates response; they do not debug. Debugging while coordinating is a cognitive overload failure mode.
+- Roles: IC, Operations Lead (execution), Communications Lead (status updates to stakeholders), Scribe (logs decisions and actions in real time).
+- Keep the incident channel focused: no speculation, no blame, only actionable information.
+- Use **Wheel of Misfortune** exercises regularly — roleplay past incidents from postmortems to build muscle memory for response before a real incident.
+
+### Production Readiness Review (PRR)
+
+Before accepting on-call responsibility, SRE performs a PRR to verify:
+- SLIs and SLOs are defined and instrumented.
+- Monitoring and alerting are in place.
+- Runbooks are written and tested.
+- Capacity planning is done.
+- Load testing results exist.
+- Rollback procedure is documented and tested.
+
+A service that cannot pass PRR is not ready for production SRE support. Accepting it anyway absorbs operational burden without the means to improve it. Repeat PRR after significant architectural changes.
+
+### Automation spectrum
+
+| Level | Description |
+|---|---|
+| 0 — Manual | Human performs the action each time |
+| 1 — Runbook | Documented steps a human follows |
+| 2 — Recommendation | System identifies the action; human approves |
+| 3 — Assisted | System performs action with human monitoring |
+| 4 — Autonomous | System acts without human involvement |
+
+- Consistency is a primary automation benefit — automation always follows the same steps.
+- Automation that is inconsistent (sometimes runs, sometimes does not) is worse than no automation — it creates the illusion of coverage.
+- Deploy changes via staged rollout with automatic rollback on metric degradation. 70% of outages are change-induced; staged deployment reduces blast radius.
+
+### Capacity planning
+
+- Plan capacity **8–12 quarters ahead** (2–3 years). Procurement timelines are long; shortfalls become incidents.
+- Design for **N+2 redundancy**: N instances serve traffic; one buffers maintenance; one buffers unexpected failures.
+- Use load testing to identify actual capacity limits before traffic reaches them.
+- Revisit capacity plans when traffic patterns change significantly — marketing campaigns, product launches, and regulatory deadlines create demand spikes outside the forecast.
+
+---
+
+## 18. CLI Command Patterns
+
+**How to choose:** check `go.mod`.
+
+- `github.com/spf13/cobra` present → **Pattern C: Cobra**
+- `github.com/peterbourgon/ff/v4` present → **Pattern B: ff/v4**
+- Neither → **Pattern A: stdlib**
+
+Check Cobra first — a project may have both, and Cobra takes precedence because it owns the command tree.
+
+**Shared rules (all patterns):**
+
+| Rule | Rationale |
+|---|---|
+| Match the framework already in `go.mod`; do not introduce a new one | The spec follows the project, not the other way around |
+| No `init()` for registration | Explicit registration in the dispatcher is traceable |
+| One command per package (or file in the flat Cobra layout) | Factory function is the only public API |
+| Return `error`; never call `os.Exit` in a command | Only `main` controls exit codes |
+| `package cmd` is a dispatcher, not a binary | It is imported by `main`, not executed directly |
+| Dispatch key must be unique across all commands | Duplicate keys silently shadow each other |
+| Error strings: lowercase, no trailing punctuation | Format: `<command>: <reason>` |
+
+### Pattern A: stdlib
+
+Use when neither `cobra` nor `ff/v4` is in `go.mod`. The `Command` struct lives in
+`pkg/pattern/command/base.go` — do not modify it.
+
+- The factory function (`<Name>Command`) is the **only exported symbol** in the package. Logic goes in the unexported `<name>Cmd`.
+- Use `flag.NewFlagSet(name, flag.ContinueOnError)` for flags. Never use the global `flag` package.
+- `flag.ExitOnError` calls `os.Exit` on parse failure — always use `flag.ContinueOnError`.
+- When `fs.Parse` returns `flag.ErrHelp` (user passed `-h`), return it **unwrapped**. `main` catches it with `errors.Is(err, flag.ErrHelp)` and exits 0.
+- `flag.ContinueOnError` auto-prints usage to stderr on `-h` or unknown flag — do not add a redundant `fs.Usage()` call.
+- The `cmd *command.Command` parameter carries command metadata; ignore it with `_` when unused.
+- `cmd/cmd.go` is the only place commands are registered (explicit `commands` slice, no `init()`).
+
+### Pattern B: ff/v4
+
+Use when `github.com/peterbourgon/ff/v4` is in `go.mod` (and Cobra is not). Each command is a package containing a `Config` struct, an exported `New` factory, and an unexported `exec` method.
+
+- `New` and `Config` are the **only exported symbols** in the package.
+- `New` self-registers by appending to `parent.Command.Subcommands` — no separate registration step.
+- Flag values are bound to `Config` fields in `New()`, **not** inside `exec`. `exec` reads already-parsed values; never call `Parse` inside `exec`.
+- `SetParent(parent.Flags)` **must** be called on every subcommand's flag set so parent flags (e.g. `--verbose`) work at any depth. `SetParent(nil)` is safe.
+- Write to `cfg.Stdout` / `cfg.Stderr`; never `os.Stdout` / `os.Stderr`.
+- Set `Exec: nil` (omit the field) on group-parent commands. `ff.ErrNoExec` is handled entirely by the dispatcher (it prints help and returns nil) — it never reaches `main`.
+- Post-parse initialization (API clients, DB connections, loggers) belongs in `cmd/cmd.go` between `r.Command.Parse(args)` and `r.Command.Run(ctx)`. Assign dependencies to fields on `root.Config` so all `exec` functions inherit them via embedding.
+- `ff.ErrHelp` is not a failure — `main` treats it as success with `errors.Is(err, ff.ErrHelp)`.
+- The `climax` tool scaffolds new applications (`climax init`) and adds commands (`climax add`). The marker comments `// climax:name`, `// climax:root-pkg`, `// climax:imports`, and `// register new commands here` in `cmd/cmd.go` must not be removed.
+- If the application has no shared flags, omit `ff.NewFlagSet` and leave `cfg.Flags` nil; `ff` creates an empty flag set automatically and `--help` still works. This is the default generated by `climax init`; uncomment the `ff.NewFlagSet` line when adding the first shared flag.
+
+### Pattern C: Cobra
+
+Use when `github.com/spf13/cobra` is in `go.mod`. Subcommands are `*cobra.Command` values returned by a `NewCommand` factory.
+
+- `NewCommand` is the **only exported symbol** in the package.
+- Never declare `var rootCmd *cobra.Command` at package level. Package-level command variables prevent isolated testing and can cause data races in parallel tests.
+- Declare flag-destination variables **inside `NewCommand`** (not at package level) — closures capture them; each `NewCommand()` call gets independent state, safe for parallel tests.
+- Bind flags in `NewCommand`, not inside `RunE`. Flags are parsed before `RunE` runs; binding inside `RunE` has no effect.
+- Use `RunE`, not `Run`. `Run` cannot return errors.
+- Write to `cmd.OutOrStdout()` / `cmd.ErrOrStderr()`; never `os.Stdout` / `os.Stderr`.
+- Set `Args` explicitly on every command. The default (`nil`) silently accepts any arguments — equivalent to `ArbitraryArgs`.
+- Set `SilenceErrors: true` and `SilenceUsage: true` on the root command. `main` prints the error and controls the exit code; Cobra must not print it first.
+- `cmd.Usage()` is for genuine usage errors only (wrong argument count, invalid flag value). Never call it for runtime errors (network, DB, permission denied) — usage output is noise for those failures.
+- `PersistentPreRunE` is the hook for post-parse initialization. By default Cobra calls only the **closest ancestor**'s `PersistentPreRunE` — if a subcommand defines its own, the root's hook silently does not run, causing nil-pointer panics. Either avoid `PersistentPreRunE` on subcommands, or set `cobra.EnableTraverseRunHooks = true` before `ExecuteContext`.
+- For subcommands in separate packages that need shared state: pass a **getter function** through the constructor (e.g. `func() *api.Client { return sharedClient }`), not the pointer itself. The getter closes over the package-level variable that `PersistentPreRunE` sets; reading the pointer directly at construction time gets the zero value.
+- Omit `RunE` on group-parent commands. Cobra prints help and returns nil when a group parent is invoked without a subcommand.
+- Use `root.SetArgs(args)` and `root.ExecuteContext(ctx)` (not `Execute()` alone) so that tests can inject args deterministically without the test binary's own args bleeding in.
+- Use the **flat layout** (`cmd/*.go`, all in `package cmd`) for simple CLIs. Switch to the **per-package layout** (`cmd/<name>/<name>.go`) when a subcommand has its own test file or significant implementation.
+- Hook execution order: `PersistentPreRunE` (closest ancestor) → `PreRunE` → `RunE` → `PostRunE` → `PersistentPostRunE` (closest ancestor).
+- Available positional argument validators: `NoArgs`, `ArbitraryArgs`, `ExactArgs(n)`, `MinimumNArgs(n)`, `MaximumNArgs(n)`, `RangeArgs(min, max)`, `OnlyValidArgs` (requires `ValidArgs` slice), `MatchAll(a, b, ...)`. For domain-specific validation, wrap a built-in and add your own check inside an `Args` func literal.
+- Flag group constraints: `cmd.MarkFlagsRequiredTogether("a", "b")` (all or none), `cmd.MarkFlagsMutuallyExclusive("a", "b")` (at most one), `cmd.MarkFlagsOneRequired("a", "b")` (at least one). These constraints are enforced automatically before `RunE`.
+- **`PersistentPreRunE` does not run in subcommand unit tests.** When a subcommand is constructed and executed without a root parent, the root's hook is absent — any dependencies normally initialized there (API clients, DB connections) will be at their zero value. Either inject them explicitly through the constructor in the test, or use integration tests through `cmd.Execute` when the full initialization chain matters.
+
+### Pattern Comparison
+
+| Concern | Pattern A: stdlib | Pattern B: ff/v4 | Pattern C: Cobra |
+|---|---|---|---|
+| Detection | Neither cobra nor ff/v4 in go.mod | ff/v4 in go.mod | cobra in go.mod |
+| Command representation | `Command` struct with `Run` fn pointer | `*ff.Command` struct with `Exec` fn field | `*cobra.Command` struct with `RunE` fn field |
+| Flag binding | `flag.NewFlagSet` inside `<name>Cmd` | `ff.FlagSet` bound in `New()` | `pflag` via `cmd.Flags()` / `cmd.PersistentFlags()` |
+| Flag inheritance | Not supported | `SetParent(parent.Flags)` | `PersistentFlags()` on any ancestor |
+| Flag-value state | Local vars in `<name>Cmd` | Fields on `Config` struct | Local vars closed over inside `NewCommand` |
+| I/O | `fmt.Println` to real stdout | `cfg.Stdout` / `cfg.Stderr` | `cmd.OutOrStdout()` / `cmd.ErrOrStderr()` |
+| Context | Not threaded | `context.Context` arg in `exec` | `cmd.Context()` inside `RunE` |
+| Shared dependencies | Not supported | Fields on `root.Config` via struct embedding | Package-level vars in `cmd/root.go`; initialized in `PersistentPreRunE`; passed to subcommands as getter functions |
+| Post-parse init | Not supported | Between `Parse()` and `Run()` in `cmd/cmd.go` | `PersistentPreRunE` on root (watch closest-ancestor trap) |
+| Hook lifecycle | None | Single `Exec` function | `PersistentPreRunE → PreRunE → RunE → PostRunE → PersistentPostRunE` |
+| `-h` / `--help` | `flag.ErrHelp` returned unwrapped; `main` exits 0 | `ff.ErrHelp` returned; `main` exits 0 | Cobra handles automatically |
+| No subcommand given | Dispatcher prints command list | Dispatcher prints help (via `ErrNoExec`); returns nil | Cobra prints help; returns nil |
+| Group parent commands | Not supported | `Exec: nil`; dispatcher handles `ErrNoExec` | `RunE: nil`; Cobra handles |
+| Argument validation | Manual | Manual | Built-in validators (`NoArgs`, `MinimumNArgs`, etc.) |
+| Dispatch key | Exact `UsageLine` (case-sensitive) | `Name` field (case-insensitive) | First word of `Use` (case-sensitive) |
+| Testability | Low — stdout not capturable | High — `cmd.Run` accepts `io.Writer` | High — `Execute(ctx, args, stdout, stderr)` |
+| Shell completions | None | None | Built-in |
+| Man page / doc generation | None | None | Built-in (`doc.GenManTree`, `doc.GenMarkdownTree`) |
+| Code scaffolding | None | `climax` tool | None |
+
+---
+
+## 19. Checklist
 
 ### Architecture
 - [ ] Root package: domain types, interfaces, Error type — no external imports
@@ -1589,3 +1934,53 @@ Code is obvious when a reader's first guess about its behavior is correct.
 - [ ] Liveness and readiness endpoints distinct and present
 - [ ] Distributed tracing in place for multi-service systems
 - [ ] Data freshness tracked for batch/stream pipelines
+
+### Integration patterns
+- [ ] Integration style chosen explicitly (Messaging / RPC / Shared DB / File Transfer) before interface design
+- [ ] Business code isolated from messaging: Messaging Gateway (outbound), Service Activator (inbound)
+- [ ] Coupling dimensions analyzed; specific remaining dimensions named; system not declared "loosely coupled" without specifying which dimensions
+- [ ] All messages include Message ID and Correlation ID
+- [ ] TTL set on time-sensitive messages
+- [ ] Dead Letter Queue configured on every production consumer
+- [ ] Idempotent Receiver implemented; processed IDs persisted durably (not in-memory)
+- [ ] Queue message age monitored in addition to queue depth
+- [ ] Flow control mechanism (TTL, tail drop, or backpressure) configured before queue capacity is needed
+- [ ] EDA topology: Pub/Sub channels used where publisher-side independence is required; Recipient List pattern (EventBridge rules) acknowledged as a different trade-off
+
+### Site reliability engineering
+- [ ] SLI defined and measurable from user perspective; not from internal instrumentation
+- [ ] SLO defined with rolling window; not set at 100%; tighter than SLA
+- [ ] Error budget computed `(1 − SLO) × window` and tracked in real time
+- [ ] Alerting structured in three tiers: pages (immediate action), tickets (days), logs (forensics only)
+- [ ] Four golden signals instrumented: latency, traffic, errors, saturation
+- [ ] Multi-window, multi-burn-rate alerting configured; not raw SLI violation alerting
+- [ ] Toil tracked; any manual step repeated more than twice has an automation ticket
+- [ ] On-call rotation has ≥8 engineers (single-site) or ≥6 (dual-site with follow-the-sun)
+- [ ] Blameless postmortem written for every SLO-breaching incident; action items have owners and due dates
+- [ ] Incident Commander role assigned at incident start; IC does not debug
+- [ ] Production Readiness Review completed before SRE accepts on-call responsibility for a service
+- [ ] Capacity planned 8–12 quarters ahead; N+2 redundancy modeled
+- [ ] Changes deployed via staged rollout with automatic rollback on metric degradation
+
+### CLI commands
+- [ ] `go.mod` checked to select pattern: Cobra → Pattern C; ff/v4 → Pattern B; neither → Pattern A. Check Cobra first — it takes precedence if both are present.
+- [ ] No CLI framework introduced that is not already in `go.mod`
+- [ ] All commands return `error`; no `os.Exit` inside a command
+- [ ] Error strings: lowercase, no trailing punctuation, format `<command>: <reason>`
+- [ ] **Pattern A:** `flag.NewFlagSet("name", flag.ContinueOnError)` — never `flag.ExitOnError`
+- [ ] **Pattern A:** `flag.ErrHelp` returned **unwrapped**; `main` catches with `errors.Is(err, flag.ErrHelp)` and exits 0
+- [ ] **Pattern A:** No redundant `fs.Usage()` call — `flag.ContinueOnError` auto-prints usage on `-h`
+- [ ] **Pattern A:** `<Name>Command()` factory is the only exported symbol; logic in unexported `<name>Cmd`
+- [ ] **Pattern A:** All commands registered in `cmd/cmd.go` commands slice; no `init()`
+- [ ] **Pattern B:** `SetParent(parent.Flags)` called on every subcommand's flag set (including when parent has no flags — `SetParent(nil)` is safe)
+- [ ] **Pattern B:** I/O via `cfg.Stdout`/`cfg.Stderr` only; never `os.Stdout`/`os.Stderr`
+- [ ] **Pattern B:** `ff.ErrNoExec` absorbed by dispatcher (prints help, returns nil) — never reaches `main`
+- [ ] **Pattern B:** Flag values bound in `New()`, not in `exec`; `exec` reads already-parsed values
+- [ ] **Pattern B:** Climax marker comments preserved in `cmd/cmd.go`: `// climax:name`, `// climax:root-pkg`, `// climax:imports`, `// register new commands here`
+- [ ] **Pattern C:** No package-level `var rootCmd`; flag-destination variables declared inside `NewCommand`
+- [ ] **Pattern C:** `RunE` used (not `Run`); `Args` validator set explicitly on every command
+- [ ] **Pattern C:** Root command has `SilenceErrors: true` and `SilenceUsage: true`
+- [ ] **Pattern C:** `cmd.Usage()` called only for genuine usage errors (wrong arg count, invalid flag) — never for runtime errors
+- [ ] **Pattern C:** Getter functions used for cross-package shared state (e.g. `func() *api.Client { return sharedClient }`) — never pass the pointer directly at construction time
+- [ ] **Pattern C:** `cobra.EnableTraverseRunHooks = true` set before `ExecuteContext` if any subcommand defines its own `PersistentPreRunE`
+- [ ] **Pattern C:** Integration tests drive commands through `cmd.Execute`; unit tests of individual subcommands inject dependencies explicitly (root's `PersistentPreRunE` does not run without a root parent)
