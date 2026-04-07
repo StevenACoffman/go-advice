@@ -1,1696 +1,400 @@
-# Go Application Rules
+# Source List
 
-Unified rules derived from:
-- [Ben Johnson](benbjohnson_rules.md)'s gobeyond.dev series on Go application design
-- [Mat Ryer](matryer_rules.md)'s "https://grafana.com/blog/how-i-write-http-services-in-go-after-13-years/"
-- [Mitchell Hashimoto](./mitchelh_rules.md)'s "https://www.youtube.com/watch?v=8hQG7QlcLBk" (GopherCon 2017)
+Catalog of all 81 source documents in this repository. Each entry links to the source file, gives a bibliography citation, and — where one exists — links to the corresponding distillation rules file.
 
----
+## Contents
 
-## Do Not
-
-These are the highest-priority rules. They represent the most common mistakes.
-
-**Architecture**
-- Do not put domain types in subpackages — they belong in the root package.
-- Do not group packages by type (`models/`, `controllers/`, `handlers/`) — group by dependency instead.
-- Do not allow the root package to import any other package in the application.
-- Do not use global variables for application state (DB connections, config, etc.).
-- Do not put business logic in `main` — it only wires dependencies.
-- Do not put the `main` package in the project root — put binaries under `cmd/`.
-- Do not enforce authorization in HTTP handlers or middleware — enforce it in service implementations, embedded in SQL where possible.
-- Do not call `os.Exit` anywhere except `main`. Return errors up the stack.
-
-**HTTP**
-- Do not make handlers methods on a server struct. Use maker funcs that take dependencies as arguments.
-- Do not use the global `flag` package. Use `flag.NewFlagSet` inside `run`.
-- Do not use `t.SetEnv` in tests. Use the `getenv` parameter instead.
-- Do not store durable state in handler closures. Use a database.
-- Do not put fallible setup in `addRoutes`. Resolve errors in `run` before calling it.
-- Do not use a named `middleware` type alias. Return `func(http.Handler) http.Handler` directly.
-- Do not call `json.NewEncoder` or `json.NewDecoder` inline in handlers. Use centralized helpers.
-- Do not repeat middleware dependency arguments on every `mux.Handle` call. Use a constructor that closes over dependencies once.
-
-**SQL**
-- Do not use ORMs — use `database/sql` directly.
-- Do not expose transactions to callers of a service — transactions are an implementation detail.
-- Do not return `(nil, nil)` from a function that looks up a single entity by ID.
-- Do not allow arbitrary sort columns from callers — map a fixed set of named values to SQL.
-- Do not interpolate caller-supplied strings into SQL queries — use parameterized queries.
-
-**Testing**
-- Do not use third-party testing frameworks — use the stdlib `testing` package only.
-- Do not return errors from test helpers — call `t.Fatalf` inside the helper.
-- Do not omit `t.Helper()` from test helpers.
-- Do not use `time.Sleep` in tests — use `select` + `time.After`.
-- Do not hardcode port numbers in tests — use `"127.0.0.1:0"` and let the OS assign one.
-- Do not mock `net.Conn` — make real network connections.
-- Do not test unexported functions as the primary testing strategy.
-- Do not write unit tests that duplicate assertions already covered by an end-to-end test.
+- [Software Design & Architecture](#software-design--architecture) (3)
+- [Distributed Systems & Integration](#distributed-systems--integration) (5)
+- [DevOps & Operations](#devops--operations) (3)
+- [Go Programming](#go-programming) (10)
+- [Observability & Monitoring](#observability--monitoring) (3)
+- [Data Science & Machine Learning](#data-science--machine-learning) (9)
+- [Statistics & Mathematics](#statistics--mathematics) (5)
+- [Soft Skills & Communication](#soft-skills--communication) (15)
+- [ADHD & Executive Function](#adhd--executive-function) (15)
+- [History & Philosophy](#history--philosophy) (7)
+- [Science, Engineering & Computing](#science-engineering--computing) (6)
+- [Standalone Distillation Rules](#standalone-distillation-rules)
 
 ---
 
-## Project Layout
+## Software Design & Architecture (3)
 
-```
-myapp/                    — root package: domain types, interfaces, Error type
-    user.go               — User struct, UserService interface
-    dial.go               — Dial struct, DialService interface
-    error.go              — Error type, error codes, ErrorCode(), ErrorMessage()
-    context.go            — NewContextWithUser(), UserIDFromContext()
-    cmd/
-        myapp/
-            main.go       — calls run(), handles exit code
-            run.go        — wires dependencies, starts server
-        myappctl/
-            main.go       — optional CLI binary
-    sqlite/               — SQLite implementation of domain interfaces
-        sqlite.go         — DB type, Open(), Close()
-        user.go           — sqlite.UserService
-        dial.go           — sqlite.DialService
-    http/                 — HTTP adapter (subpackage, not a binary)
-        server.go         — NewServer() constructor
-        routes.go         — addRoutes(); every mux.Handle call lives here
-        middleware.go     — middleware constructor functions
-        encode.go         — encode, decode, decodeValid generic helpers
-        user.go           — handler maker funcs for users
-        dial.go           — handler maker funcs for dials
-    mock/                 — shared mock implementations for testing
-        user_service.go   — mock.UserService
-        dial_service.go   — mock.DialService
-```
+### [*A Philosophy of Software Design*](ousterhout/psd_book.md)
 
-**Rules:**
-- The root package name matches the application name (e.g., `package myapp`).
-- Each subpackage is named after the dependency it wraps: `sqlite`, `http`, `mock`.
-- It is acceptable to name a package the same as its wrapped stdlib package (e.g., `http`) because the two are never used in the same file.
-- Multiple binaries: one subdirectory per binary under `cmd/`.
-- Group related types together in one file. One major concept per file.
-- Target 200–500 SLOC per file. 1000 SLOC is the hard limit.
-- Put the most important type at the top of the file; lesser types below.
-- If a package exceeds ~10,000 SLOC total, evaluate whether it should be split into separate projects.
+Ousterhout, John. Yaknyam Press, 2018. ISBN 978-1-7321022-0-0. — Distillation: [ousterhout_rules.md](ousterhout_rules.md)
+
+### [*Working Effectively with Legacy Code*](mfeathers/WorkingEffectivelyWithLegacyCode_book.md)
+
+Feathers, Michael C. Prentice Hall, 2005. ISBN 978-0-131-17705-5. — Distillation: [mfeathers_rules.md](mfeathers_rules.md)
+
+### [*Refactoring: Improving the Design of Existing Code* (2nd ed.)](mfowler/refactoring_2nd_ed_book.md)
+
+Fowler, Martin. Addison-Wesley, 2018. ISBN 978-0-134-75759-9. — Distillation: [mfowler_rules.md](mfowler_rules.md)
 
 ---
 
-## Root Package: Domain Types and Interfaces
+## Distributed Systems & Integration (5)
 
-The root package defines the application's domain language. It contains only:
-- Plain data structs with no external dependencies
-- Service interfaces
-- The `Error` type and error helpers
-- Context helpers for passing the authenticated user
+### [*Designing Data-Intensive Applications* (1st ed.)](kleppmann/designing-data-intensive-applications-1st-ed_book.md)
 
-```go
-// myapp/user.go
-package myapp
+Kleppmann, Martin. O'Reilly Media, 2017. ISBN 978-1-4493-7332-0. — Distillation: [kleppmann_rules.md](kleppmann_rules.md)
 
-import "context"
+### [*Designing Data-Intensive Applications* (2nd ed.)](kleppmann/designing-data-intensive-applications-2nd-ed_book.md)
 
-// User represents an application user.
-type User struct {
-    ID    int
-    Name  string
-    Email string
-}
+Kleppmann, Martin and Chris Riccomini. O'Reilly Media, 2026. — Distillation: [kleppmann_rules.md](kleppmann_rules.md)
 
-// UserService defines operations on users.
-// Implementations live in subpackages (sqlite, postgres, mock).
-type UserService interface {
-    // FindUserByID retrieves a user by ID.
-    // Returns ENOTFOUND if the user does not exist.
-    FindUserByID(ctx context.Context, id int) (*User, error)
+### [*Enterprise Integration Patterns*](ghohpe/eip_book.md)
 
-    // FindUsers retrieves a list of users matching filter.
-    // Also returns the total count of matching users regardless of Limit/Offset.
-    FindUsers(ctx context.Context, filter UserFilter) ([]*User, int, error)
+Hohpe, Gregor and Bobby Woolf. *Enterprise Integration Patterns: Designing, Building, and Deploying Messaging Solutions*. Addison-Wesley, 2003. ISBN 978-0-321-20068-6. — Distillation: [ghohpe_rules.md](ghohpe_rules.md)
 
-    // CreateUser creates a new user.
-    // On success, user.ID and timestamps are populated on the input struct.
-    CreateUser(ctx context.Context, user *User) error
+### [*Cloud Strategy*](ghohpe/cloudstrategy_book.md)
 
-    // UpdateUser updates an existing user by ID.
-    // Returns the updated user even if an error occurs.
-    // Returns ENOTFOUND if the user does not exist.
-    // Returns EUNAUTHORIZED if the caller does not own the user.
-    UpdateUser(ctx context.Context, id int, upd UserUpdate) (*User, error)
+Hohpe, Gregor. Leanpub, 2020. — Distillation: [ghohpe_rules.md](ghohpe_rules.md)
 
-    // DeleteUser permanently removes a user by ID.
-    // Returns ENOTFOUND if the user does not exist.
-    // Returns EUNAUTHORIZED if the caller does not own the user.
-    DeleteUser(ctx context.Context, id int) error
-}
+### [*Versioning in an Event Sourced System*](misc/event_source_versioning_book.md)
 
-// UserFilter filters results from FindUsers.
-type UserFilter struct {
-    ID    *int    // optional
-    Email *string // optional
-
-    Offset int
-    Limit  int
-}
-
-// UserUpdate holds the fields that can be updated on a user.
-// Pointer fields are optional — nil means do not change.
-type UserUpdate struct {
-    Name  *string
-    Email *string
-}
-```
-
-**Rules:**
-- Domain structs reference only primitive types and other domain types.
-- No `database/sql`, `net/http`, or any other external import in the root package.
-- Service interfaces live alongside the types they operate on, in the same file.
-- Every interface method has a godoc comment documenting which error codes it can return.
-- Filter structs use pointer fields so each field is independently optional.
-- Update structs use pointer fields so partial updates are expressible without a separate endpoint.
+Young, Gregory. n.d.
 
 ---
 
-## Error Type
+## DevOps & Operations (3)
 
-Define one `Error` type in the root package.
+### [*Site Reliability Engineering*](sre/sre_book.md)
 
-```go
-// myapp/error.go
-package myapp
+Beyer, Betsy, Chris Jones, Jennifer Petoff, and Niall Richard Murphy, eds. *Site Reliability Engineering: How Google Runs Production Systems*. O'Reilly Media, 2016. ISBN 978-1-491-92912-4. — Distillation: [sre_rules.md](sre_rules.md)
 
-import (
-    "bytes"
-    "fmt"
-)
+### [*The DevOps Handbook*](gkim/TheDevOpsHandbook_book.md)
 
-// Application error codes.
-const (
-    ECONFLICT     = "conflict"     // action cannot be performed
-    EINTERNAL     = "internal"     // internal error
-    EINVALID      = "invalid"      // validation failed
-    ENOTFOUND     = "not_found"    // entity does not exist
-    EUNAUTHORIZED = "unauthorized" // caller lacks permission
-)
+Kim, Gene, Jez Humble, Patrick Debois, and John Willis. *The DevOps Handbook: How to Create World-Class Agility, Reliability, and Security in Technology Organizations*. IT Revolution Press, 2016. ISBN 978-1-942-78800-3. — Distillation: [gkim_devops_rules.md](gkim_devops_rules.md)
 
-// Error defines a standard application error.
-type Error struct {
-    Code    string // machine-readable error code
-    Message string // human-readable message for end users
-    Op      string // logical operation, e.g. "sqlite.UserService.FindUserByID"
-    Err     error  // nested error
-}
+### [*Terraform: Up and Running* (3rd ed.)](golang/terraform_upand_running_book.md)
 
-func (e *Error) Error() string {
-    var buf bytes.Buffer
-    if e.Op != "" {
-        fmt.Fprintf(&buf, "%s: ", e.Op)
-    }
-    if e.Err != nil {
-        buf.WriteString(e.Err.Error())
-    } else {
-        if e.Code != "" {
-            fmt.Fprintf(&buf, "<%s> ", e.Code)
-        }
-        buf.WriteString(e.Message)
-    }
-    return buf.String()
-}
-
-// ErrorCode returns the code of the root error, or EINTERNAL if none is set.
-func ErrorCode(err error) string {
-    if err == nil {
-        return ""
-    }
-    if e, ok := err.(*Error); ok && e.Code != "" {
-        return e.Code
-    } else if ok && e.Err != nil {
-        return ErrorCode(e.Err)
-    }
-    return EINTERNAL
-}
-
-// ErrorMessage returns the human-readable message, or a generic fallback.
-func ErrorMessage(err error) string {
-    if err == nil {
-        return ""
-    }
-    if e, ok := err.(*Error); ok && e.Message != "" {
-        return e.Message
-    } else if ok && e.Err != nil {
-        return ErrorMessage(e.Err)
-    }
-    return "An internal error has occurred. Please contact technical support."
-}
-```
-
-**Rules:**
-- Start with five codes. Add more only as needed.
-- A wrapping error carries `Op` + `Err`. A leaf error carries `Code` + `Message`. Never both.
-- Translate all external errors (e.g., `sql.ErrNoRows`) to domain codes at the implementation boundary.
-- Call `ErrorCode(err)` and `ErrorMessage(err)` in calling code — never type-assert `*Error` directly.
-
-### Op for logical stack traces
-
-Every significant function wraps errors with its `Op` name using the format `"package.Type.Method"`:
-
-```go
-func (s *UserService) CreateUser(ctx context.Context, user *myapp.User) error {
-    const op = "sqlite.UserService.CreateUser"
-    if err := s.insertUser(ctx, user); err != nil {
-        return &myapp.Error{Op: op, Err: err}
-    }
-    return nil
-}
-```
-
-The resulting `Error()` string is a single-line logical stack trace:
-```
-sqlite.UserService.CreateUser: sqlite.insertUser: near "INSERT": syntax error
-```
+Brikman, Yevgeniy. O'Reilly Media, 2022. ISBN 978-1-098-11674-3.
 
 ---
 
-## Authentication via Context
+## Go Programming (10)
 
-```go
-// myapp/context.go
-package myapp
+### [*Go Recipes*](golang/go_recipes_book.md)
 
-import "context"
+Varghese, Shiju. Apress, 2016. ISBN 978-1-4842-1189-2.
 
-type contextKey int
+### [*Go Design Patterns*](golang/go_design_patterns_book.md)
 
-const userContextKey contextKey = iota
+Contreras, Mario Castro. Packt Publishing, 2017.
 
-func NewContextWithUser(ctx context.Context, user *User) context.Context {
-    return context.WithValue(ctx, userContextKey, user)
-}
+### [*Go Programming Blueprints* (2nd ed.)](golang/go_programming_blueprints_2nd_book.md)
 
-func UserFromContext(ctx context.Context) *User {
-    u, _ := ctx.Value(userContextKey).(*User)
-    return u
-}
+Ryer, Mat. Packt Publishing, 2016.
 
-func UserIDFromContext(ctx context.Context) int {
-    if u := UserFromContext(ctx); u != nil {
-        return u.ID
-    }
-    return 0
-}
-```
+### [*Machine Learning With Go*](golang/machine_learning_with_go_book.md)
 
-**Rules:**
-- The HTTP layer sets the user on the context after authentication.
-- Service implementations extract the user from context to apply authorization.
-- Authorization is enforced at the lowest level — embedded in SQL `WHERE` clauses so the database enforces it.
+Whitenack, Daniel. Packt Publishing, 2017. ISBN 978-1-785-88313-7.
 
-```go
-// sqlite/dial.go — authorization embedded in the query, not in the HTTP handler
-func findDials(ctx context.Context, tx *Tx, filter myapp.DialFilter) ([]*myapp.Dial, int, error) {
-    userID := myapp.UserIDFromContext(ctx)
-    where := []string{"1 = 1"}
-    args := []interface{}{}
-    where = append(where, `id IN (SELECT dial_id FROM dial_memberships WHERE user_id = ?)`)
-    args = append(args, userID)
-    // ...
-}
-```
+### [*gRPC: Up and Running*](golang/gRPC_up_and_running_book.md)
+
+Indrasiri, Kasun and Danesh Kuruppu. O'Reilly Media, 2020. ISBN 978-1-492-05833-0.
+
+### [*gRPC Go for Professionals*](golang/gRPC_go_for_professionals_book.md)
+
+Jean, Clément. Packt Publishing, 2023. ISBN 978-1-837-63234-6.
+
+### [*gRPC Microservices in Go*](golang/gRPC_Microservices_in_Go_book.md)
+
+Babal, Hüseyin. Manning Publications, 2023. ISBN 978-1-633-43946-5. — Distillation: [golang/gRPC_Microservices_in_Go_rules.md](golang/gRPC_Microservices_in_Go_rules.md)
+
+### [*Domain-Driven Design with Golang*](golang/domain_driven_design_with_golang_book.md)
+
+Boyle, Matthew. Packt Publishing, 2022. ISBN 978-1-803-23021-2. — Distillation: [golang/domain_driven_design_with_golang_rules.md](golang/domain_driven_design_with_golang_rules.md)
+
+### [*Go with the Domain*](golang/go_with_domain_book.md)
+
+Laszczak, R. and M. Smółka (Three Dots Labs). Three Dots Labs, 2026. — Distillation: [golang/go_with_domain_rules.md](golang/go_with_domain_rules.md)
+
+### [*Effective Go Recipes*](golang/effective_go_recipes_book.md)
+
+Tebeka, Miki. Pragmatic Bookshelf, 2024. ISBN 978-1-680-50951-9.
 
 ---
 
-## Subpackages: Dependency Adapters
+## Observability & Monitoring (3)
 
-Each subpackage wraps one external dependency and implements one or more domain interfaces.
+### [*Observability Engineering*](misc/Observability_Engineering_book.md)
 
-```go
-// sqlite/user.go
-package sqlite
+Majors, Charity, Liz Fong-Jones, and George Miranda. O'Reilly Media, 2022. ISBN 978-1-492-07644-5.
 
-import (
-    "context"
-    "myapp"
-)
+### [*OpenTelemetry for Dummies*](misc/opentelemetry_for_dummies_book.md)
 
-type UserService struct {
-    db *DB
-}
+Dash0. n.d.
 
-func (s *UserService) FindUserByID(ctx context.Context, id int) (*myapp.User, error) {
-    tx, err := s.db.BeginTx(ctx, nil)
-    if err != nil {
-        return nil, err
-    }
-    defer tx.Rollback()
+### [*Observability for Large Language Models*](misc/Observability_for_LLMs_Report_book.md)
 
-    user, err := findUserByID(ctx, tx, id)
-    if err != nil {
-        return nil, err
-    }
-    return user, nil
-}
-```
-
-**Rules:**
-- Subpackages never import each other.
-- All service methods follow the same shape: begin transaction → call helpers → commit.
-- Because all implementations satisfy the same root-package interface, they can be stacked with caching or decorator wrappers.
-
-```go
-// myapp/user_cache.go — caching layer in the root package
-type UserCache struct {
-    cache   map[int]*User
-    service UserService
-}
-
-func NewUserCache(service UserService) *UserCache {
-    return &UserCache{cache: make(map[int]*User), service: service}
-}
-
-// cmd/myapp/main.go
-userService := myapp.NewUserCache(&sqlite.UserService{DB: db})
-```
+Carter, Phillip. *Observability for Large Language Models: Understanding and Improving Your Use of LLMs*. n.d.
 
 ---
 
-## Program Entry Point
+## Data Science & Machine Learning (9)
 
-`main` does one thing: call `run` and handle the exit code.
+### [*The Art of Data Science*](data_science/art_of_data_science_book.md)
 
-```go
-func main() {
-    ctx := context.Background()
-    if err := run(ctx, os.Args, os.Getenv, os.Stdin, os.Stdout, os.Stderr); err != nil {
-        fmt.Fprintf(os.Stderr, "%s\n", err)
-        os.Exit(1)
-    }
-}
-```
+Peng, Roger D. and Elizabeth Matsui. *The Art of Data Science: A Guide for Anyone Who Works with Data*. Leanpub, 2015.
 
-`run` accepts OS primitives as arguments so tests can substitute them without touching global state:
+### [*Storytelling with Data*](data_science/storytelling_with_data_book.md)
 
-```go
-func run(
-    ctx    context.Context,
-    args   []string,
-    getenv func(string) string,
-    stdin  io.Reader,
-    stdout, stderr io.Writer,
-) error {
-    ctx, cancel := signal.NotifyContext(ctx, os.Interrupt)
-    defer cancel()
-    // parse flags, build dependencies, call NewServer, start httpServer
-}
-```
+Knaflic, Cole Nussbaumer. *Storytelling with Data: A Data Visualization Guide for Business Professionals*. Wiley, 2015. ISBN 978-1-119-00225-3.
 
-| Parameter | `main` passes | Test passes |
-|---|---|---|
-| `ctx` | `context.Background()` | `context.WithCancel(...)` |
-| `args` | `os.Args` | custom `[]string` |
-| `getenv` | `os.Getenv` | custom func |
-| `stdin` | `os.Stdin` | `strings.NewReader(...)` |
-| `stdout` | `os.Stdout` | `&bytes.Buffer{}` |
-| `stderr` | `os.Stderr` | `io.Discard` |
+### [*How to Measure Anything* (2nd ed.)](data_science/HowToMeasureAnythingEd2DouglasWHubbard_book.md)
 
-**Rules:**
-- `signal.NotifyContext` goes inside `run`, not `main`, so `cancel` is deferred.
-- Use `flag.NewFlagSet(args[0], flag.ContinueOnError)` and pass `args[1:]` to it. Never use the global `flag` package.
-- Use the `getenv` parameter instead of calling `os.Getenv` directly.
+Hubbard, Douglas W. *How to Measure Anything: Finding the Value of Intangibles in Business*, 2nd ed. Wiley, 2010. ISBN 978-0-470-53939-9.
+
+### [*The Data Engineering Cookbook*](data_science/data_engineering_cookbook_book.md)
+
+Kretz, Andreas. *The Data Engineering Cookbook: Mastering the Plumbing of Data Science*. 2019.
+
+### [*Mathematics for Machine Learning*](data_science/mathematics_for_machine_learning_book.md)
+
+Deisenroth, Marc Peter, A. Aldo Faisal, and Cheng Soon Ong. Cambridge University Press, 2020. ISBN 978-1-108-47004-9.
+
+### [*10 Things You Need to Know About BERT and the Transformer Architecture*](data_science/nlp_and_transformer_architecture_book.md)
+
+Horan, Cathal. Neptune.ai Blog, March 29, 2021.
+
+### [*Big Book of Machine Learning Use Cases* (2nd ed.)](data_science/big_book_of_machine_learning_use_cases_2nd_ed_book.md)
+
+Databricks. 2022.
+
+### [*A Compact Guide to Large Language Models*](misc/compact-guide-to-large-language-models_book.md)
+
+Databricks. 2023.
+
+### [*AI Assisted Programming*](misc/ai_assisted_programming_book.md)
+
+Feathers, Michael. n.d.
 
 ---
 
-## HTTP Layer
+## Statistics & Mathematics (5)
 
-### Server Constructor
+### [*Probability and Statistics Cookbook*](math/probability_and_statistics_cookbook_book.md)
 
-`NewServer` takes all dependencies as explicit arguments and returns `http.Handler`.
+Vallentin, Matthias. 2011.
 
-```go
-func NewServer(
-    logger *Logger,
-    config *Config,
-    userService myapp.UserService,
-    dialService myapp.DialService,
-) http.Handler {
-    mux := http.NewServeMux()
-    addRoutes(mux, logger, config, userService, dialService)
-    var handler http.Handler = mux
-    handler = someMiddleware(handler)
-    handler = someMiddleware2(handler)
-    return handler
-}
-```
+### [*Probability Cheatsheet v2.0*](math/probability_book.md)
 
-**Rules:**
-- Return type is `http.Handler`, not a named struct, unless the situation genuinely requires more.
-- Pass `nil` for dependencies a particular test does not exercise.
-- Global middleware (CORS, auth, logging) is applied here, not in `addRoutes`.
-- Prefer explicit argument lists over config structs — the compiler enforces completeness.
-- The HTTP layer translates domain errors to HTTP status codes using `myapp.ErrorCode(err)`:
+Chen, William and Joe Blitzstein. 2015.
 
-```go
-func errorStatusCode(err error) int {
-    switch myapp.ErrorCode(err) {
-    case myapp.ENOTFOUND:
-        return http.StatusNotFound
-    case myapp.EINVALID:
-        return http.StatusBadRequest
-    case myapp.EUNAUTHORIZED:
-        return http.StatusUnauthorized
-    case myapp.ECONFLICT:
-        return http.StatusConflict
-    default:
-        return http.StatusInternalServerError
-    }
-}
-```
+### [*Practical Statistics for Data Scientists* (2nd ed.)](math/PracticalStatistics_book.md)
 
-### Route Registration
+Bruce, Peter, Andrew Bruce, and Peter Gedeck. O'Reilly Media, 2020. ISBN 978-1-492-07294-2.
 
-All routes live in `routes.go`. This is the single place to see the full API surface.
+### [*Think Stats*](math/thinkstats_book.md)
 
-```go
-func addRoutes(
-    mux          *http.ServeMux,
-    logger       *Logger,
-    config       Config,
-    userService  myapp.UserService,
-    dialService  myapp.DialService,
-) {
-    mux.Handle("/api/v1/users", handleUsersGet(logger, userService))
-    mux.Handle("/api/v1/users/", handleUserGet(logger, userService))
-    mux.Handle("/admin", adminOnly(handleAdminIndex(logger)))
-    mux.HandleFunc("/healthz", handleHealthz(logger))
-    mux.Handle("/", http.NotFoundHandler())
-}
-```
+Downey, Allen B. *Think Stats: Exploratory Data Analysis*, 2nd ed. O'Reilly Media, 2014. ISBN 978-1-491-90733-7.
 
-**Rules:**
-- `addRoutes` does not return an error. Anything fallible is resolved in `run` before this is called.
-- Always register an explicit `http.NotFoundHandler()` for `/`.
-- Always include a `/healthz` or `/readyz` endpoint.
-- Per-route middleware is applied inline here.
+### [*Mostly Harmless Econometrics*](soft_skills/recrut_econometrics_book.md)
 
-### Handler Maker Funcs
-
-Handlers are maker funcs: functions that take dependencies and return `http.Handler`.
-
-```go
-func handleSomething(logger *Logger, store *Store) http.Handler {
-    // one-time setup runs here at registration time, not per request
-    thing := prepareThing()
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        // per-request logic
-        logger.Info(r.Context(), "handleSomething")
-    })
-}
-```
-
-**Rules:**
-- The return type is always `http.Handler`, not `http.HandlerFunc`.
-- The outer function's scope is the closure environment. Use it for one-time setup.
-- Only read shared closure data from concurrent handlers. Protect any writes with a mutex.
-
-Defer expensive setup with `sync.Once`:
-
-```go
-func handleTemplate(files ...string) http.Handler {
-    var (
-        init   sync.Once
-        tpl    *template.Template
-        tplerr error
-    )
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        init.Do(func() {
-            tpl, tplerr = template.ParseFiles(files...)
-        })
-        if tplerr != nil {
-            http.Error(w, tplerr.Error(), http.StatusInternalServerError)
-            return
-        }
-        // use tpl
-    })
-}
-```
-
-Declare request/response types inside the maker func if they are handler-specific:
-
-```go
-func handleSomething() http.Handler {
-    type request struct {
-        Name string
-    }
-    type response struct {
-        Greeting string `json:"greeting"`
-    }
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        // ...
-    })
-}
-```
-
-### Encoding and Decoding
-
-Centralize JSON encode/decode in `encode.go`. All handlers call these helpers.
-
-`encode` takes `r *http.Request` even though it only writes a response. This is intentional: it keeps the signature symmetric with `decode` and allows future content negotiation (reading the `Accept` header) without changing every call site. Do not remove the `r` parameter.
-
-```go
-func encode[T any](w http.ResponseWriter, r *http.Request, status int, v T) error {
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(status)
-    if err := json.NewEncoder(w).Encode(v); err != nil {
-        return fmt.Errorf("encode json: %w", err)
-    }
-    return nil
-}
-
-func decode[T any](r *http.Request) (T, error) {
-    var v T
-    if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
-        return v, fmt.Errorf("decode json: %w", err)
-    }
-    return v, nil
-}
-```
-
-Usage:
-```go
-// encode — type inferred from argument
-err := encode(w, r, http.StatusOK, obj)
-
-// decode — type must be specified (T only in return position)
-decoded, err := decode[CreateSomethingRequest](r)
-```
-
-### Validation
-
-Use a single-method `Validator` interface. Request types implement it.
-
-```go
-type Validator interface {
-    Valid(ctx context.Context) (problems map[string]string)
-}
-```
-
-```go
-func decodeValid[T Validator](r *http.Request) (T, map[string]string, error) {
-    var v T
-    if err := json.NewDecoder(r.Body).Decode(&v); err != nil {
-        return v, nil, fmt.Errorf("decode json: %w", err)
-    }
-    if problems := v.Valid(r.Context()); len(problems) > 0 {
-        return v, problems, fmt.Errorf("invalid %T: %d problems", v, len(problems))
-    }
-    return v, nil, nil
-}
-```
-
-**Rules:**
-- `Valid` returns `nil` (not an empty map) when valid.
-- Keep `Valid` to field-level checks. Database checks belong outside this method.
-- Use `decodeValid` for types that implement `Validator`; use `decode` for others.
-- Never call `v.Valid()` inline in handler code — that belongs in `decodeValid`.
-
-### Middleware
-
-Middleware signature: `func(http.Handler) http.Handler`. No named type alias.
-
-```go
-func adminOnly(h http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        if !currentUser(r).IsAdmin {
-            http.NotFound(w, r)
-            return
-        }
-        h(w, r)
-    })
-}
-```
-
-When middleware needs dependencies, use a constructor that closes over them:
-
-```go
-// middleware.go
-func newAuthMiddleware(logger Logger, db *DB) func(http.Handler) http.Handler {
-    return func(h http.Handler) http.Handler {
-        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-            // use logger, db
-            h.ServeHTTP(w, r)
-        })
-    }
-}
-
-// routes.go
-auth := newAuthMiddleware(logger, db)
-mux.Handle("/route1", auth(handleSomething(deps)))
-mux.Handle("/route2", auth(handleSomething2(deps)))
-```
-
-### Graceful Shutdown
-
-```go
-httpServer := &http.Server{
-    Addr:    net.JoinHostPort(config.Host, config.Port),
-    Handler: srv,
-}
-go func() {
-    if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-        fmt.Fprintf(stderr, "error listening and serving: %s\n", err)
-    }
-}()
-var wg sync.WaitGroup
-wg.Add(1)
-go func() {
-    defer wg.Done()
-    <-ctx.Done()
-    shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
-    if err := httpServer.Shutdown(shutdownCtx); err != nil {
-        fmt.Fprintf(stderr, "error shutting down: %s\n", err)
-    }
-}()
-wg.Wait()
-```
+Angrist, Joshua D. and Jörn-Steffen Pischke. *Mostly Harmless Econometrics: An Empiricist's Companion*. Princeton University Press, 2008. ISBN 978-0-691-12035-5.
 
 ---
 
-## SQL Layer
+## Soft Skills & Communication (15)
 
-### DB and Tx Types
+### [*Never Split the Difference*](soft_skills/never_split_the_difference_book.md)
 
-Wrap `*sql.DB` and `*sql.Tx` in application-specific types:
+Voss, Chris and Tahl Raz. *Never Split the Difference: Negotiating as If Your Life Depended on It*. Harper Business, 2016. ISBN 978-0-062-40780-1. — Distillation: [soft_skills/never_split_difference_rules.md](soft_skills/never_split_difference_rules.md)
 
-```go
-// sqlite/sqlite.go
-type DB struct {
-    db  *sql.DB
-    DSN string
-}
+### [*The Secrets of Consulting*](soft_skills/thesecretsofconsulting_book.md)
 
-func (db *DB) Open() error  { ... }
-func (db *DB) Close() error { ... }
+Weinberg, Gerald M. *The Secrets of Consulting: A Guide to Giving and Getting Advice Successfully*. Dorset House, 1985. ISBN 978-0-932-63313-5. — Distillation: [consulting_rules.md](consulting_rules.md)
 
-type Tx struct {
-    *sql.Tx
-}
-```
+### [*More Secrets of Consulting*](soft_skills/moresecrets_book.md)
 
-### Service Methods: Transaction Boundary Only
+Weinberg, Gerald M. *More Secrets of Consulting: The Consultant's Tool-Kit*. Dorset House, 2002. ISBN 978-0-932-63329-6. — Distillation: [consulting_rules.md](consulting_rules.md)
 
-Service methods are thin. They own the transaction; helper functions own the SQL.
+### [*Social Engineering*](soft_skills/social_engineering_book.md)
 
-```go
-func (s *DialService) CreateDial(ctx context.Context, dial *myapp.Dial) error {
-    tx, err := s.db.BeginTx(ctx, nil)
-    if err != nil {
-        return err
-    }
-    defer tx.Rollback()
+Reynolds, Vince. 2015.
 
-    if err := createDial(ctx, tx, dial); err != nil {
-        return err
-    }
-    return tx.Commit()
-}
-```
+### [*The Power of Habit*](soft_skills/power_of_habit_book.md)
 
-### Helper Functions: Unexported, Accept `*Tx`, Reusable
+Duhigg, Charles. *The Power of Habit: Why We Do What We Do in Life and Business*. Random House, 2012. ISBN 978-1-400-06928-6.
 
-Helper functions are package-level (not attached to a service type) so multiple service methods can call them within the same transaction.
+### [*Conversation Casanova*](soft_skills/conversation_casanova_book.md)
 
-```go
-func createDial(ctx context.Context, tx *Tx, dial *myapp.Dial) error {
-    const op = "sqlite.createDial"
-    result, err := tx.ExecContext(ctx, `
-        INSERT INTO dials (user_id, name, created_at, updated_at)
-        VALUES (?, ?, ?, ?)`,
-        dial.UserID, dial.Name, dial.CreatedAt, dial.UpdatedAt,
-    )
-    if err != nil {
-        return &myapp.Error{Op: op, Err: err}
-    }
-    dial.ID, err = result.LastInsertId()
-    return err
-}
-```
+Perrotta, Dave. *Conversation Casanova: How to Effortlessly Start Conversations and Flirt Like a Pro*. n.d.
 
-### Row Iteration
+### [*Factfulness*](soft_skills/factfulness_book.md)
 
-```go
-rows, err := tx.QueryContext(ctx, query, args...)
-if err != nil {
-    return nil, 0, err
-}
-defer rows.Close()
+Rosling, Hans, Ola Rosling, and Anna Rosling Rönnlund. *Factfulness: Ten Reasons We're Wrong About the World — and Why Things Are Better Than You Think*. Flatiron Books, 2018. ISBN 978-1-250-10781-7.
 
-dials := make([]*myapp.Dial, 0)  // make, not var — encodes as [] not null in JSON
-var n int
-for rows.Next() {
-    var dial myapp.Dial
-    if err := rows.Scan(&dial.ID, &dial.Name, &n); err != nil {
-        return nil, 0, err
-    }
-    dials = append(dials, &dial)
-}
-return dials, n, rows.Err()
-```
+### [*The Unreasonable Effectiveness of Leading Questions*](soft_skills/unreasonable_effectiveness_of_leading_questions_book.md)
 
-Three rules:
-1. `defer rows.Close()` immediately after a successful `QueryContext`.
-2. Initialize slices with `make([]*T, 0)` — nil slices encode as JSON `null`; empty slices as `[]`.
-3. Return `rows.Err()` after the loop — it captures errors that occurred mid-iteration.
+Author unidentified in source. n.d.
 
-### Building WHERE Clauses Dynamically
+### [*Critical Thinking in the Real World*](soft_skills/critical_thinking_in_world_book.md)
 
-```go
-where := []string{"1 = 1"}
-args := []interface{}{}
+Tuhovsky, Ian. n.d.
 
-if v := filter.ID; v != nil {
-    where = append(where, "id = ?")
-    args = append(args, *v)
-}
-if v := filter.Email; v != nil {
-    where = append(where, "email = ?")
-    args = append(args, *v)
-}
+### [*How to Listen*](soft_skills/how_to_listen_book.md)
 
-query := `SELECT id, name, email, COUNT(*) OVER() FROM users WHERE ` +
-    strings.Join(where, " AND ") +
-    ` ORDER BY ` + orderBy +
-    ` LIMIT ? OFFSET ?`
-args = append(args, filter.Limit, filter.Offset)
-```
+Author unidentified in source. n.d.
 
-Start with `"1 = 1"` so the slice is never empty and `strings.Join` always produces valid SQL.
+### [*Ten Times Happier*](soft_skills/ten_times_happier_book.md)
 
-### Pagination with Total Count in One Query
+Author unidentified in source. n.d.
 
-```sql
-SELECT id, name, COUNT(*) OVER()
-FROM dials
-WHERE user_id = ?
-ORDER BY id ASC
-LIMIT ? OFFSET ?
-```
+### [*A Practical Guide to Critical Thinking*](soft_skills/a_practical_guide_to_critical_thinking_book.md)
 
-`COUNT(*) OVER()` is a window function that returns the total matching row count on every row, ignoring `LIMIT`/`OFFSET`. Scan it on every iteration — the value is the same each time.
+Haskins, Greg R. 2006.
 
-### Sort Order: Fixed Named Values Only
+### [*How to Win Friends and Influence People in the Digital Age*](soft_skills/how_to_win_friends_and_influence_people_book.md)
 
-```go
-var orderBy string
-switch filter.SortBy {
-case "name_asc":
-    orderBy = "name ASC"
-case "updated_at_desc":
-    orderBy = "updated_at DESC"
-default:
-    orderBy = "id ASC"
-}
-```
+Carnegie, Dale (updated by Brent Cole). Simon & Schuster, 2011. ISBN 978-1-451-62030-2.
 
-Never interpolate caller-supplied strings into SQL. Always provide a safe default.
+### [*Brain Hacks*](soft_skills/brain_hacks_book.md)
 
-### Loading Associated Data
+Adams Media. *Brain Hacks: 200+ Tricks to Boost Your Brain Power*. Adams Media, 2018. ISBN 978-1-507-20592-6.
 
-Use an `attachXAssociations` helper to load related objects after the primary query:
+### [*Developing Unrelenting Drive, Dedication, and Determination*](soft_skills/developing_unrelenting_drive_book.md)
 
-The service method calls the helper in a loop after the primary query:
-
-```go
-func (s *DialService) FindDials(ctx context.Context, filter myapp.DialFilter) ([]*myapp.Dial, int, error) {
-    tx, err := s.db.BeginTx(ctx, nil)
-    if err != nil {
-        return nil, 0, err
-    }
-    defer tx.Rollback()
-
-    dials, n, err := findDials(ctx, tx, filter)
-    if err != nil {
-        return dials, n, err
-    }
-    for _, dial := range dials {
-        if err := attachDialAssociations(ctx, tx, dial); err != nil {
-            return dials, n, err
-        }
-    }
-    return dials, n, nil
-}
-
-func attachDialAssociations(ctx context.Context, tx *Tx, dial *myapp.Dial) error {
-    var err error
-    if dial.User, err = findUserByID(ctx, tx, dial.UserID); err != nil {
-        return fmt.Errorf("attach dial user: %w", err)
-    }
-    return nil
-}
-```
-
-Always return parent associations. Include child collections only when small and almost always needed.
+Grieger, Russell. Routledge, 2015. ISBN 978-0-415-83651-4.
 
 ---
 
-## CRUD Conventions
+## ADHD & Executive Function (15)
 
-### FindByID
+### [*The Adult's Guide to Stronger Executive Functions*](adhd/adults_guide_to_stronger_executive_functions_book.md)
 
-```go
-FindUserByID(ctx context.Context, id int) (*User, error)
-```
+ADDitude Editors. ADDitude Magazine, n.d.
 
-- Never return `(nil, nil)`. Return `ENOTFOUND` if the entity does not exist.
-- Implement by calling the list helper and changing the empty-result semantics:
+### [*ADHD: A Guide to Understanding Symptoms, Causes, Diagnosis, Treatment, and Changes Over Time* (5th ed.)](adhd/adhd_guide_to_understanding_book.md)
 
-```go
-func findUserByID(ctx context.Context, tx *Tx, id int) (*myapp.User, error) {
-    users, _, err := findUsers(ctx, tx, myapp.UserFilter{ID: &id})
-    if err != nil {
-        return nil, err
-    } else if len(users) == 0 {
-        return nil, &myapp.Error{Code: myapp.ENOTFOUND, Message: "User not found."}
-    }
-    return users[0], nil
-}
-```
+Wender, Paul H. and David A. Tomb. Oxford University Press, 2017. ISBN 978-0-190-22757-0.
 
-### FindMany
+### [*Atomic Habits*](adhd/atomic_habits_book.md)
 
-```go
-FindUsers(ctx context.Context, filter UserFilter) ([]*User, int, error)
-```
+Clear, James. *Atomic Habits: An Easy & Proven Way to Build Good Habits & Break Bad Ones*. Avery, 2018. ISBN 978-0-735-21129-2.
 
-- `(nil, 0, nil)` is a valid return — an empty result set is not an error.
-- The `int` return is the total count for pagination (ignores `Limit`/`Offset`).
+### [*The ADHD Healthy Habits Handbook*](adhd/ADHD_Healthy_Habits_Handbook_book.md)
 
-### Create
+ADDitude. ADDitude Magazine, n.d.
 
-```go
-CreateUser(ctx context.Context, user *User) error
-```
+### [*Getting Sh\*t Done*](adhd/getting_shit_done_book.md)
 
-- Accept a pointer to the domain struct.
-- Mutate the input pointer in place with generated values (ID, CreatedAt, UpdatedAt).
-- Nest related object creation in the same transaction by accepting populated child slices on the input struct.
+Cain, Stefan. 2017.
 
-### Update
+### [*The Emotions of ADHD*](adhd/emotions_of_adhd_book.md)
 
-```go
-UpdateUser(ctx context.Context, id int, upd UserUpdate) (*User, error)
-```
+ADDitude Editors. ADDitude Magazine, n.d.
 
-- Accept an `Update` struct with pointer fields; nil means unchanged.
-- Return the updated object even when an error occurs — web UIs need it to replay the form.
-- The `id` is separate from `UserUpdate` so the same update struct can target multiple IDs.
+### [*6 Ways to Retain Focus (When Your Brain Says 'No!')*](adhd/6-Ways-to-Retain-Focus-When-Your-Brain-Says-No_book.md)
 
-### Delete
+Quinn, Patricia, M.D. ADDitude Magazine, n.d.
 
-```go
-DeleteUser(ctx context.Context, id int) error
-```
+### [*365 Days With Self-Discipline*](adhd/365_days_with_self_discipline_book.md)
 
-- Delete by primary key.
-- Enforce authorization inside the implementation using `UserIDFromContext`.
+Meadows, Martin. *365 Days With Self-Discipline: 365 Life-Altering Thoughts on Self-Control, Mental Resilience, and Success*. Meadows Publishing, 2017. ISBN 978-1-981-68303-3.
 
----
+### [*60 Second Solutions: Motivation*](adhd/60_second_solutions_motivation_book.md)
 
-## Mock Package
+Davidson, Jeff. David & Charles, 2011.
 
-The mock package provides hand-written mocks for testing. No third-party mock libraries.
+### [*No Excuses! The Power of Self-Discipline*](adhd/no_excuses_self_discipline_book.md)
 
-```go
-// mock/user_service.go
-package mock
+Tracy, Brian. Vanguard Press, 2010. ISBN 978-1-593-15583-0.
 
-import (
-    "context"
-    "myapp"
-)
+### [*Eat That Frog!*](adhd/eat_that_frog_book.md)
 
-type UserService struct {
-    FindUserByIDFn      func(ctx context.Context, id int) (*myapp.User, error)
-    FindUserByIDInvoked bool
+Tracy, Brian. *Eat That Frog! 21 Great Ways to Stop Procrastinating and Get More Done in Less Time*. Berrett-Koehler Publishers, 2001. ISBN 978-1-576-75198-8.
 
-    CreateUserFn      func(ctx context.Context, user *myapp.User) error
-    CreateUserInvoked bool
+### [*The Power of Now*](adhd/power_of_now_book.md)
 
-    // one Fn + Invoked pair per interface method
-}
+Tolle, Eckhart. *The Power of Now: A Guide to Spiritual Enlightenment*. New World Library, 1997. ISBN 978-1-577-31480-6.
 
-func (s *UserService) FindUserByID(ctx context.Context, id int) (*myapp.User, error) {
-    s.FindUserByIDInvoked = true
-    return s.FindUserByIDFn(ctx, id)
-}
-```
+### [*Organizing Solutions for People with ADHD*](adhd/organizing_solutions_for_people_with_adhd_book.md)
 
-Usage in tests:
+Author unidentified in source. n.d.
 
-```go
-var svc mock.UserService
-svc.FindUserByIDFn = func(ctx context.Context, id int) (*myapp.User, error) {
-    if id != 100 {
-        t.Fatalf("unexpected id: %d", id)
-    }
-    return &myapp.User{ID: 100, Name: "Susy"}, nil
-}
-```
+### [*Finish What You Start*](adhd/Finish_what_you_start_book.md)
 
-**Rules:**
-- One mock per domain interface, in the `mock` package.
-- Write them by hand — no mock generation tools.
-- The `Invoked` booleans let tests assert that a method was or was not called.
+Hollins, Peter. *Finish What You Start: The Art of Following Through, Taking Action, Executing, & Self-Discipline*. 2018.
+
+### [*Real-Life Executive Functioning Workbook*](adhd/Real-Life-Executive-Functioning-Workbook-fillable_book.md)
+
+Leblanc, Cortney. n.d.
 
 ---
 
-## Wiring Dependencies
+## History & Philosophy (7)
 
-`main` (or `run`) wires concrete implementations to interfaces and starts the server. No business logic.
+### [*A History of Western Philosophy*](misc/History_of_Western_Philosopy_book.md)
 
-```go
-// cmd/myapp/main.go
-func main() {
-    ctx := context.Background()
-    if err := run(ctx, os.Args, os.Getenv, os.Stdin, os.Stdout, os.Stderr); err != nil {
-        fmt.Fprintf(os.Stderr, "%s\n", err)
-        os.Exit(1)
-    }
-}
+Russell, Bertrand. George Allen & Unwin Ltd, 1946.
 
-// cmd/myapp/run.go
-func run(ctx context.Context, args []string, getenv func(string) string,
-    stdin io.Reader, stdout, stderr io.Writer) error {
+### [*An Illustrated Brief History of Western Philosophy*](misc/illuminated_history_of_western_philosopy_book.md)
 
-    ctx, cancel := signal.NotifyContext(ctx, os.Interrupt)
-    defer cancel()
+Kenny, Anthony. Blackwell Publishing, 2006. ISBN 978-1-405-15606-3.
 
-    db := &sqlite.DB{DSN: getenv("DATABASE_URL")}
-    if err := db.Open(); err != nil {
-        return err
-    }
-    defer db.Close()
+### [*A New History of Western Philosophy, Vol. II: Medieval Philosophy*](misc/a_new_history_of_western_philosophy_vol2_book.md)
 
-    userService := myapp.NewUserCache(&sqlite.UserService{DB: db})
-    dialService := &sqlite.DialService{DB: db}
+Kenny, Anthony. Oxford University Press, 2005. ISBN 978-0-198-75256-3.
 
-    srv := http.NewServer(logger, config, userService, dialService)
-    // start httpServer with graceful shutdown
-}
-```
+### [*Oxford Illustrated History of the Renaissance*](misc/oxford_illustrated_history_of_renaissance_book.md)
 
-**Rules:**
-- `main` is the only place where concrete implementation packages (`sqlite`, `http`) are imported together.
-- Dependency injection is manual — no framework.
-- `main` is also an adapter: it connects OS environment (env vars, args) to the domain.
-- `main` only calls `run`; `run` does the actual wiring.
+Campbell, Gordon, ed. Oxford University Press, 2019. ISBN 978-0-198-73137-7.
+
+### [*Liberalism: A Very Short Introduction*](misc/liberalism_short_intro_book.md)
+
+Freeden, Michael. Oxford University Press, 2015. ISBN 978-0-198-83521-5.
+
+### [*Knowledge: A Very Short Introduction*](misc/knowledge_book.md)
+
+Nagel, Jennifer. Oxford University Press, 2014. ISBN 978-0-199-65405-7.
+
+### [*Debating Humanity*](soft_skills/debating_humanity_book.md)
+
+Chernilo, Daniel. *Debating Humanity: Towards a Philosophical Sociology*. Cambridge University Press, 2017. ISBN 978-1-107-18498-9.
 
 ---
 
-## Test Methodology
+## Science, Engineering & Computing (6)
 
-### Table-Driven Tests
+### [*The Art of Doing Science and Engineering: Learning to Learn*](misc/Hamming-TheArtOfDoingScienceAndEngineering_book.md)
 
-Always use table-driven tests. Set up the table structure even for a single case.
+Hamming, Richard W. Gordon and Breach, 1997. ISBN 978-9-056-99500-3.
 
-```go
-cases := map[string]struct{ A, B, Expected int }{
-    "positive":  {1, 1, 2},
-    "negative":  {-1, -2, -3},
-    "mixed":     {1, -1, 0},
-    "both zero": {0, 0, 0},
-}
-for name, tc := range cases {
-    tc := tc // capture loop variable (required before Go 1.22)
-    t.Run(name, func(t *testing.T) {
-        actual := tc.A + tc.B
-        if actual != tc.Expected {
-            t.Errorf("expected %d, got %d", tc.Expected, actual)
-        }
-    })
-}
-```
+### [*Introduction to Scientific Programming with Python*](misc/scientific_programming_book.md)
 
-**Rules:**
-- Name every case. Never rely on array indices in failure output.
-- Use `t.Run` to wrap each case. `defer` works per-subtest and cases are individually targetable.
-- Capture the loop variable inside the subtest: `tc := tc`.
+Sundnes, Joakim. Simula SpringerBriefs on Computing, Springer, 2020. ISBN 978-3-030-50356-7.
 
-### Test Fixtures
+### [*SQLite Tutorial*](misc/sqlite_tutorial_book.md)
 
-Store test data in a `test-fixtures/` directory alongside the test file.
+Author unidentified in source. Tutorialspoint, n.d.
 
-```go
-func TestParseConfig(t *testing.T) {
-    data := filepath.Join("test-fixtures", "valid_config.hcl")
-    f, err := os.Open(data)
-    if err != nil {
-        t.Fatalf("failed to open fixture: %s", err)
-    }
-    defer f.Close()
-}
-```
+### [*Problem-Solving Tools: What, When & How*](misc/problem_solving_tools_book.md)
 
-`go test` always sets the working directory to the package directory being tested, so relative paths work regardless of where `go test` is invoked.
+Nickols, Fred. 2020.
 
-### Golden Files
+### [*How to Become a Straight-A Student*](misc/straight_a_book.md)
 
-Use golden files to test complex output (formatted text, serialized structs, generated code).
+Newport, Cal. *How to Become a Straight-A Student: The Unconventional Strategies Real College Students Use to Score High While Studying Less*. Broadway Books, 2006. ISBN 978-0-767-92271-9.
 
-```go
-var update = flag.Bool("update", false, "update golden files")
+### [*The 48 Laws of Power*](misc/48_laws_of_power_book.md)
 
-func TestFormat(t *testing.T) {
-    cases := []struct{ Name, Input string }{
-        {"basic", "input.hcl"},
-        {"empty", "empty.hcl"},
-    }
-    for _, tc := range cases {
-        t.Run(tc.Name, func(t *testing.T) {
-            input, _ := os.ReadFile(filepath.Join("test-fixtures", tc.Input))
-            actual := Format(input)
-
-            golden := filepath.Join("test-fixtures", tc.Name+".golden")
-            if *update {
-                os.WriteFile(golden, actual, 0644)
-            }
-
-            expected, _ := os.ReadFile(golden)
-            if !bytes.Equal(actual, expected) {
-                t.Errorf("output mismatch for %s\ngot:\n%s\nwant:\n%s",
-                    tc.Name, actual, expected)
-            }
-        })
-    }
-}
-```
-
-Workflow: run `go test -update` to generate golden files, inspect them by eye, commit when correct.
-
-### Test Helpers
-
-Never return an error from a test helper. Accept `*testing.T` and call `t.Fatalf` internally.
-
-```go
-// Wrong
-func testTempFile(t *testing.T) (string, error) { … }
-
-// Right
-func testTempFile(t *testing.T) (string, func()) {
-    t.Helper()
-    tf, err := os.CreateTemp("", "test")
-    if err != nil {
-        t.Fatalf("testTempFile: %s", err)
-    }
-    tf.Close()
-    return tf.Name(), func() { os.Remove(tf.Name()) }
-}
-
-func TestSomething(t *testing.T) {
-    path, cleanup := testTempFile(t)
-    defer cleanup()
-}
-```
-
-When a helper has no meaningful return value, one-line the defer:
-
-```go
-func testChdir(t *testing.T, dir string) func() {
-    t.Helper()
-    old, err := os.Getwd()
-    if err != nil {
-        t.Fatalf("testChdir: %s", err)
-    }
-    if err := os.Chdir(dir); err != nil {
-        t.Fatalf("testChdir: %s", err)
-    }
-    return func() { os.Chdir(old) }
-}
-
-func TestThing(t *testing.T) {
-    defer testChdir(t, "/tmp/testdir")()
-}
-```
-
-**Rules:**
-- Always call `t.Helper()` at the top of every test helper.
-- Return a `func()` for cleanup; defer it at the call site.
-- Use `t.Fatal` (not `t.Error`) in helpers when execution cannot continue.
-
-Wrap real types with test-specific setup/teardown helpers:
-
-```go
-// sqlite/testing_test.go
-package sqlite_test
-
-type TestDB struct {
-    *sqlite.DB
-}
-
-func MustOpenDB(t *testing.T) *TestDB {
-    t.Helper()
-    db := &sqlite.DB{DSN: ":memory:"}
-    if err := db.Open(); err != nil {
-        t.Fatal(err)
-    }
-    t.Cleanup(func() { db.Close() })
-    return &TestDB{db}
-}
-```
-
-Test assertion helpers (use instead of verbose `if err != nil` blocks):
-
-```go
-func assert(t *testing.T, condition bool, msg string) {
-    t.Helper()
-    if !condition {
-        t.Fatal(msg)
-    }
-}
-
-func ok(t *testing.T, err error) {
-    t.Helper()
-    if err != nil {
-        t.Fatalf("unexpected error: %s", err)
-    }
-}
-
-func equals(t *testing.T, exp, act interface{}) {
-    t.Helper()
-    if exp != act {
-        t.Fatalf("expected %v, got %v", exp, act)
-    }
-}
-```
-
-### Timing-Dependent Tests
-
-Use `select` + `time.After` + `timeMultiplier`. Never use `time.Sleep`.
-
-```go
-var timeMultiplier = time.Duration(1)
-
-func TestAsyncThing(t *testing.T) {
-    done := make(chan struct{})
-    go doAsyncWork(done)
-
-    select {
-    case <-done:
-    case <-time.After(5 * time.Second * timeMultiplier):
-        t.Fatal("timed out waiting for async work")
-    }
-}
-```
-
-`timeMultiplier` is a package-level variable so CI environments can increase it without changing test logic.
-
-### Parallelization
-
-**Unit tests:** Do not use `t.Parallel()`. Parallel tests make failures ambiguous — you cannot tell whether a failure is a logic bug or a race condition.
-
-**Run-based integration tests:** `t.Parallel()` is safe when calling `run()` end-to-end, because `run` has no global state. Each invocation has its own wired dependencies.
-
-The test port is controlled via the `getenv` parameter; the server binds to the port from configuration and does not pick one at random. The same `getenv` function provides all environment values the test needs:
-
-```go
-func TestSomethingEndToEnd(t *testing.T) {
-    t.Parallel() // safe because run has no global state
-    ctx, cancel := context.WithCancel(context.Background())
-    t.Cleanup(cancel)
-
-    getenv := func(key string) string {
-        switch key {
-        case "PORT":
-            return "18080"
-        case "DATABASE_URL":
-            return "file::memory:?cache=shared"
-        default:
-            return ""
-        }
-    }
-    args := []string{"myapp"}
-
-    go run(ctx, args, getenv, nil, io.Discard, io.Discard)
-    waitForReady(ctx, 5*time.Second, "http://localhost:18080/healthz")
-    // hit the API as a real client would
-}
-```
-
-Use `t.Cleanup(cancel)` — the context cancels when the test ends, triggering graceful shutdown. Delete unit tests that assert the same thing as an end-to-end test. One authoritative set of tests is easier to maintain than duplicated assertions spread across layers. Write handler-level unit tests only when there is specific complex logic that warrants isolated coverage.
-
-### Wait for readiness
-
-Poll `/healthz` before hitting the API. The polling loop also provides a health endpoint that real users benefit from — designing for testability exposes what users need.
-
-```go
-func waitForReady(ctx context.Context, timeout time.Duration, endpoint string) error {
-    client := http.Client{}
-    start := time.Now()
-    for {
-        req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-        if err != nil {
-            return fmt.Errorf("failed to create request: %w", err)
-        }
-        resp, err := client.Do(req)
-        if err == nil && resp.StatusCode == http.StatusOK {
-            resp.Body.Close()
-            return nil
-        }
-        if resp != nil {
-            resp.Body.Close()
-        }
-        select {
-        case <-ctx.Done():
-            return ctx.Err()
-        default:
-            if time.Since(start) >= timeout {
-                return fmt.Errorf("timeout waiting for endpoint")
-            }
-            time.Sleep(250 * time.Millisecond)
-        }
-    }
-}
-```
-
-### Inline test types for storytelling
-
-When request/response types are scoped inside a maker func, declare minimal inline structs in test code that express only what the test cares about. This makes intent explicit.
-
-```go
-// Only Name matters for this endpoint — the struct says so
-person := struct {
-    Name string `json:"name"`
-}{Name: "Mat Ryer"}
-```
-
-If you need to verify a response field, declare only that field:
-
-```go
-var got struct {
-    Greeting string `json:"greeting"`
-}
-json.NewDecoder(resp.Body).Decode(&got)
-```
-
-If you need to validate concurrent behavior in unit tests, use goroutines and `-race` explicitly, run as separate processes rather than via `t.Parallel()`.
+Greene, Robert. Viking, 1998. ISBN 978-0-670-88146-7.
 
 ---
 
-## Writing Testable Code
-
-### Global State
-
-Avoid global state. When it is unavoidable, use this hierarchy:
-
-```go
-// Worst — cannot be changed in tests
-const port = 1000
-
-// Better — can be overridden in tests
-var port = 1000
-
-// Best — constant default, configurable via struct
-const defaultPort = 1000
-
-type ServerOpts struct {
-    Port int // initialize to defaultPort in constructor
-}
-```
-
-Do not use `init()` to set global state that tests cannot override.
-
-### Test the Exported API
-
-Test the exported API, not internals. Unexported functions are implementation details. If the exported API is correct, the internals are correct by definition.
-
-```go
-// Test this:
-func TestServer_CreateUser(t *testing.T) { … }
-
-// Not this (unless the function is extremely complex):
-func Test_hashPassword(t *testing.T) { … }
-```
-
-Use `internal/` packages to over-package safely. Internal packages cannot be imported by external consumers, giving good test boundaries without committing to a public API.
-
-Test files use the external test package to test the exported API:
-
-```go
-// sqlite/user_test.go
-package sqlite_test
-```
-
-### Networking
-
-Always make real network connections in tests. Use OS-assigned ports.
-
-```go
-func testConn(t *testing.T) (client, server net.Conn) {
-    t.Helper()
-    ln, _ := net.Listen("tcp", "127.0.0.1:0")
-    var srv net.Conn
-    go func() {
-        defer ln.Close()
-        srv, _ = ln.Accept()
-    }()
-    cli, _ := net.Dial("tcp", ln.Addr().String())
-    return cli, srv
-}
-```
-
-### Configurability
-
-Production code with hardcoded behavior (fixed ports, paths, timeouts) is hard to test. Overparameterize structs. Unexported fields are fine — only internal tests need access.
-
-```go
-type ServerOpts struct {
-    CachePath string
-    Port      int
-    // unexported test-only field
-    testSkipAuth bool
-}
-
-func (s *Server) authenticate(r *http.Request) (User, error) {
-    if s.opts.testSkipAuth {
-        return User{ID: "test-user"}, nil
-    }
-    return s.oauthProvider.Validate(r)
-}
-```
-
-### Complex Struct Equality
-
-Choose based on what gives the most useful failure output:
-
-**Option 1 — `reflect.DeepEqual`**: works, but failure messages are often opaque.
-
-**Option 2 — third-party diff library**: generates human-readable diff on mismatch.
-
-**Option 3 — `testString()` pattern**: for large or deeply nested structures, add an unexported method that renders the fields that matter as a human-readable string, then compare strings.
-
-```go
-// In a _test.go file in the package under test:
-func (g *Graph) testString() string {
-    var buf bytes.Buffer
-    for _, node := range g.nodes {
-        fmt.Fprintf(&buf, "%s -> %v\n", node.Name, node.Deps)
-    }
-    return buf.String()
-}
-
-if got.testString() != want.testString() {
-    t.Errorf("graph mismatch:\ngot:\n%s\nwant:\n%s",
-        got.testString(), want.testString())
-}
-```
-
-### Subprocessing
-
-**Option 1 — Execute the real binary.** Guard with a boolean initialized in `init`:
-
-```go
-var testHasGit bool
-
-func init() {
-    if _, err := exec.LookPath("git"); err == nil {
-        testHasGit = true
-    }
-}
-
-func TestGitStatus(t *testing.T) {
-    if !testHasGit {
-        t.Log("git not found, skipping")
-        t.Skip()
-    }
-    // use real git binary
-}
-```
-
-**Option 2 — Mock the subprocess** using the `helperProcess` pattern:
-
-```go
-func helperProcess(s ...string) *exec.Cmd {
-    cs := []string{"-test.run=TestHelperProcess", "--"}
-    cs = append(cs, s...)
-    env := []string{"GO_WANT_HELPER_PROCESS=1"}
-    cmd := exec.Command(os.Args[0], cs...)
-    cmd.Env = append(env, os.Environ()...)
-    return cmd
-}
-
-func TestHelperProcess(*testing.T) {
-    if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
-        return
-    }
-    defer os.Exit(0)
-
-    args := os.Args
-    for len(args) > 0 {
-        if args[0] == "--" {
-            args = args[1:]
-            break
-        }
-        args = args[1:]
-    }
-
-    cmd, args := args[0], args[1:]
-    switch cmd {
-    case "status":
-        fmt.Println("nothing to commit")
-    default:
-        fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
-        os.Exit(1)
-    }
-}
-```
-
-`TestHelperProcess` is a no-op during normal `go test` runs. When called via `helperProcess`, it implements mock subprocess behavior.
-
-### Interfaces
-
-Define interfaces at the point of use. The caller — not the callee — defines what it needs. Keep interfaces as small as possible.
-
-```go
-// Too broad — tests must implement the full net.Conn interface
-func ServeConn(c net.Conn) error { … }
-
-// Better — tests only need to implement io.ReadWriteCloser
-func ServeConn(c io.ReadWriteCloser) error { … }
-```
-
-Create interfaces where you expect alternate implementations or where the interface is the natural mocking seam. Do not create an interface for every type.
-
-### Inline test interfaces
-
-The `mock` package is for application-wide domain interfaces that multiple packages need. For a one-off dependency in a single test file, declare an inline struct with a function field instead:
-
-```go
-type fakeMailer struct {
-    SendFunc func(to, subject, body string) error
-}
-
-func (f *fakeMailer) Send(to, subject, body string) error {
-    return f.SendFunc(to, subject, body)
-}
-```
-
-Use it in the test:
-
-```go
-mailer := &fakeMailer{
-    SendFunc: func(to, subject, body string) error {
-        if to != "user@example.com" {
-            t.Errorf("unexpected recipient: %s", to)
-        }
-        return nil
-    },
-}
-```
-
-This keeps the interface narrow (the caller defines only what it needs), keeps the mock local to the test file, and avoids polluting the `mock` package with types that only one test uses.
-
-### Testing as a Public API
-
-For packages consumed by other packages, export test helpers in a `testing.go` file (not `_test.go`). Use `go-testing-interface` instead of `*testing.T` to avoid injecting `go test` flags into every program that imports your package.
-
-```go
-// testing.go
-import testing "github.com/mitchellh/go-testing-interface"
-
-func TestConfig(t testing.T) *Config {
-    t.Helper()
-    return &Config{
-        Addr:    "127.0.0.1:0",
-        Timeout: 100 * time.Millisecond,
-    }
-}
-
-func TestConfigInvalid(t testing.T) *Config {
-    t.Helper()
-    return &Config{} // missing required fields
-}
-
-func TestServer(t testing.T) (net.Addr, io.Closer) {
-    t.Helper()
-    srv := newInMemoryServer()
-    if err := srv.Start(); err != nil {
-        t.Fatalf("TestServer: %s", err)
-    }
-    return srv.Addr(), srv
-}
-```
-
-Also export mock structs for interfaces your package defines, so consumers can record and replay calls.
-
-### Custom Frameworks
-
-Always use `go test` as the test runner, even for acceptance and integration tests. Build custom frameworks inside `go test`, not alongside it.
-
-Guard expensive test suites with a flag:
-
-```go
-var flagAcceptance = flag.Bool("acceptance", false, "run acceptance tests")
-
-func TestProvider_basic(t *testing.T) {
-    if !*flagAcceptance {
-        t.Skip("skipping acceptance test; run with -acceptance")
-    }
-    // provision real resources, make real API calls
-}
-```
-
-### Repeat Yourself in Tests
-
-Prefer a long, flat, self-contained test over a short test that delegates to many helpers in many files. When a test fails months later, the reader should understand it by reading one function.
-
-```go
-// Prefer this (200 lines, everything in one place):
-func TestContext_Apply_basicDestroy(t *testing.T) {
-    m := testModule(t, "apply-destroy")
-    p := testProvider("aws")
-    p.ApplyFn = testApplyFn
-    p.DiffFn = testDiffFn
-    state := &State{ … }
-    ctx := testContext(t, &ContextOpts{
-        Module:    m,
-        Providers: map[string]ResourceProviderFactory{"aws": testProviderFuncFixed(p)},
-        State:     state,
-    })
-    // … 180 more explicit lines
-}
-
-// Over this (20 lines calling 7 helpers across 4 files):
-func TestContext_Apply_basicDestroy(t *testing.T) {
-    ctx := defaultTestContext(t)
-    applyAndCheck(t, ctx, expectedDestroyState())
-}
-```
-
-When writing a new test that resembles an existing one, copy and modify. It feels wasteful but keeps each test independently readable.
-
-The rule applies to *test logic*, not to *test infrastructure*. Low-level setup helpers that are universally applicable (`testTempFile`, `testTempDB`, `testConn`, `MustOpenDB`) are good abstractions — they handle error-prone setup that every test in the package needs. What you should not abstract is the sequence of actions and assertions that constitutes the test itself.
-
----
-
-## Unified Checklist
-
-### Project structure
-- [ ] Root package contains domain types, service interfaces, Error type — no external imports
-- [ ] Subpackages named after wrapped dependency (`sqlite`, `http`, `mock`)
-- [ ] Binaries live under `cmd/`; `main.go` and `run.go` in `cmd/myapp/`, not in the `http/` subpackage
-- [ ] File organization: one major concept per file, 200–500 SLOC target
-- [ ] Most important type at top of file; lesser types below
-
-### Domain layer
-- [ ] Domain structs reference only primitive types and other domain types
-- [ ] Service interfaces live alongside the types they operate on
-- [ ] Every interface method documents which error codes it can return
-- [ ] Filter structs use pointer fields; Update structs use pointer fields
-
-### Error handling
-- [ ] Error type in root package with Code, Message, Op, Err fields
-- [ ] Five base error codes: ECONFLICT, EINTERNAL, EINVALID, ENOTFOUND, EUNAUTHORIZED
-- [ ] `ErrorCode()` and `ErrorMessage()` helpers in root package
-- [ ] External errors translated to domain error codes at the implementation boundary
-- [ ] `Op` set on every significant function using `"package.Type.Method"` format
-
-### Authentication
-- [ ] `NewContextWithUser()` and `UserIDFromContext()` in root package `context.go`
-- [ ] Authorization enforced inside service implementations, embedded in SQL `WHERE` clauses
-
-### Program entry point
-- [ ] `main` only calls `run`; passes `os.Args`, `os.Getenv`, `os.Stdin`, `os.Stdout`, `os.Stderr`
-- [ ] `run` accepts `(ctx, args, getenv, stdin, stdout, stderr)` — no OS globals
-- [ ] `signal.NotifyContext` and `defer cancel()` inside `run`
-- [ ] `flag.NewFlagSet` inside `run`; global `flag` package never used
-
-### HTTP layer
-- [ ] `NewServer` takes all dependencies as arguments, returns `http.Handler`
-- [ ] Global middleware applied in `NewServer`; per-route middleware in `routes.go`
-- [ ] All routes registered in `routes.go`; explicit `http.NotFoundHandler()` for `/`
-- [ ] `/healthz` endpoint present
-- [ ] Handlers are maker funcs: `func handleX(deps...) http.Handler` — not struct methods
-- [ ] Maker func return type is `http.Handler`, not `http.HandlerFunc`
-- [ ] Request/response types declared inside maker func if handler-specific
-- [ ] Expensive one-time setup deferred with `sync.Once`
-- [ ] All JSON encode/decode through `encode`/`decode`/`decodeValid` in `encode.go`
-- [ ] `decodeValid` used for request types that implement `Validator`
-- [ ] `Validator` interface: `Valid(ctx context.Context) map[string]string`
-- [ ] Middleware signature: `func(http.Handler) http.Handler`; no named type alias
-- [ ] Middleware with dependencies uses a constructor; deps not repeated per route
-- [ ] Graceful shutdown: `<-ctx.Done()` → `httpServer.Shutdown` with timeout → `wg.Wait()`
-- [ ] HTTP layer translates domain error codes to HTTP status codes via `ErrorCode(err)`
-- [ ] `encode` keeps `r *http.Request` parameter for symmetry and future content negotiation
-- [ ] Middleware dependencies closed over in a constructor; not repeated per `mux.Handle` call
-
-### SQL layer
-- [ ] Service methods are thin: begin tx → helpers → commit; `defer tx.Rollback()`
-- [ ] SQL helpers are unexported package-level functions accepting `*Tx`
-- [ ] `defer rows.Close()` after every successful `QueryContext`
-- [ ] `rows.Err()` returned after every row iteration loop
-- [ ] Result slices initialized with `make([]*T, 0)`, not `var`
-- [ ] `WHERE` clauses built with `[]string{"1 = 1"}` + `strings.Join`
-- [ ] Sort order mapped from fixed named values, never interpolated from caller
-- [ ] `COUNT(*) OVER()` used for pagination total count in a single query
-- [ ] `attachXAssociations` helper called in a loop inside the service method after the primary query
-
-### CRUD conventions
-- [ ] `FindByID` never returns `(nil, nil)`; returns `ENOTFOUND` if missing
-- [ ] `FindMany` returns `([]*T, int, error)`; `int` is total count for pagination
-- [ ] `Create` mutates the input pointer (sets ID, timestamps); nested related objects created in same transaction
-- [ ] `UpdateX` returns the updated object even on error
-
-### Mock package
-- [ ] Hand-written mocks with `Fn` + `Invoked` field pairs per method
-- [ ] No mock generation tools
-
-### Dependency injection
-- [ ] `main` only wires dependencies; no business logic
-- [ ] Caching/layering via wrapper types that implement domain interfaces
-- [ ] No global variables; no dependency injection framework
-
-### Test methodology
-- [ ] Table-driven test structure used, even for single cases
-- [ ] Every table case has a name; no index-based names
-- [ ] `t.Run` used to scope each case; loop variable captured
-- [ ] Test fixtures stored in `test-fixtures/`, accessed with relative paths
-- [ ] Complex output tested with golden files and an `-update` flag
-- [ ] Test helpers accept `*testing.T`, never return errors, always call `t.Helper()`
-- [ ] Cleanup returned as `func()` closure, deferred at call site
-- [ ] `assert`, `ok`, `equals` helpers defined; no assertion libraries
-- [ ] Async tests use `select` + `time.After` + `timeMultiplier`, not `time.Sleep`
-- [ ] Unit tests do not call `t.Parallel()`; run-based integration tests may
-- [ ] Run-based tests use `getenv` func to control port, DSN, and other config
-- [ ] `waitForReady` polls `/healthz` before making test assertions
-- [ ] Unit tests that duplicate end-to-end assertions are deleted
-
-### Writing testable code
-- [ ] No unoverridable global constants controlling runtime behavior
-- [ ] Configurable defaults: `const defaultX` + `struct { X type }` pattern
-- [ ] Only exported API tested; test files use `_test` package suffix
-- [ ] Large packages split via `internal/` to create test boundaries
-- [ ] Real network connections in tests; OS-assigned ports via `"127.0.0.1:0"`
-- [ ] Structs overparameterized so tests can override ports, paths, timeouts
-- [ ] Complex struct equality tested via diff library or `testString()` pattern
-- [ ] Subprocess tests use `testHasX bool` guard or `helperProcess` mock pattern
-- [ ] Interfaces defined at point of use, as narrow as the caller needs
-- [ ] One-off test-local interfaces use inline struct + function field; `mock` package reserved for app-wide interfaces
-- [ ] Public packages export test helpers in `testing.go` using `go-testing-interface`
-- [ ] Acceptance/integration tests guarded by a flag, always run via `go test`
-- [ ] Tests are flat and self-contained; repeat test logic rather than abstracting it
-- [ ] Infrastructure helpers (`testTempFile`, `testTempDB`, `testConn`) are abstracted; test logic is not
+## Standalone Distillation Rules
+
+The following rules files distill non-book sources (blog posts, talks, screencasts) and have no corresponding `_book.md` in this repository.
+
+| Rules File | Source |
+|---|---|
+| [matryer_rules.md](matryer_rules.md) | Mat Ryer, "How I write HTTP services in Go after 13 years" (blog post) |
+| [benbjohnson_rules.md](benbjohnson_rules.md) | Ben Johnson, gobeyond.dev series on Go application design |
+| [mitchellh_rules.md](mitchellh_rules.md) | Mitchell Hashimoto, "Advanced Testing with Go" (talk) |
+| [gbernhardt_rules.md](gbernhardt_rules.md) | Gary Bernhardt, "Functional Core, Imperative Shell" (Destroy All Software, DAS-0072) |
+| [command_rules.md](command_rules.md) | Go CLI Command Pattern Spec (internally authored) |
