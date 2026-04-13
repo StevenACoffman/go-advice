@@ -7,7 +7,7 @@ Ben Johnson
 
 20 Jan 2021
 
-](/web/20250915154003/https://www.gobeyond.dev/author/benbjohnson/)
+](https://web.archive.org/web/20250915154003/https://www.gobeyond.dev/author/benbjohnson/)
 
 *   [](https://web.archive.org/web/20250915154003/https://twitter.com/share?text=Common%20CRUD%20Design%20in%20Go&url=https://www.gobeyond.dev/crud/ "Share on Twitter")
 *   [](https://web.archive.org/web/20250915154003/https://www.facebook.com/sharer/sharer.php?u=https://www.gobeyond.dev/crud/ "Share on Facebook")

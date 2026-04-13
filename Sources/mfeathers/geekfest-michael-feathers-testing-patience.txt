@@ -1,0 +1,874 @@
+Welcome everybody to our third GeekFest. How many of you have already been here?
+Ten? Yay! Some people like us and are coming more than once. That's cool. That's really cool.
+Okay, as you already know, mostly, like most of us, GeekFest is a Groupon event.
+Of course, we are hiring, nothing new. But to be honest, yes, we do.
+Whoever you are, we need new developers. If you want to talk with somebody from us,
+Grouponers, hands up. How many Grouponers do we have? Not so many there at the back.
+You can always talk with me. I'm pretty sure whoever you are, we need you.
+We really need developers.
+You have some criteria, right?
+Yeah, yeah, absolutely.
+Okay, before we will start, maybe some announcements. Do we have Markus from Software Craftmanship?
+Yay. You guys are doing code retreats, right?
+Yeah.
+You would like to say a few words about it? Or if you still have spots and so on?
+Yeah, okay.
+Great.
+You want to come here and share with people?
+Okay.
+Hi.
+Hi, Markus from Software Craftmanship Meetup. On Saturday is the global day of code retreats.
+And we are doing two code retreats on Saturday.
+Where are they?
+Yeah.
+Where are they?
+They are at GoEuro, at Wikimedia.
+Uh-huh.
+But they are sold out.
+Oh!
+There will be the next global day of code retreats next year.
+And lots of code retreats also next year, around the year.
+We are doing a lot of code retreats and colors.
+Okay, so absolutely no chance to get a spot.
+Oh!
+That's a shame.
+Okay, so 60 people signed up for Saturday at 8.30 in the morning.
+So that's really great.
+That's cool.
+Oh, cool.
+Cool.
+Thank you very much.
+So last one? Come on!
+Cool.
+Okay.
+Anybody else? Some announcements regarding meetups?
+Anything else?
+Crazy happening in Berlin?
+No?
+Nothing?
+Okay.
+Then I guess we can start.
+Everybody knows Michael.
+I really don't need to present him.
+I'm pretty sure.
+Enjoy the talk.
+Okay, thank you very much.
+This is kind of interesting because Peter reached out to me a while back and said,
+hey, do you want to come?
+You're coming to Berlin.
+Or go to Berlin, which I'm here for this week.
+He says, would you give a talk at a media group?
+And I said, yeah, sure.
+And I looked and I'm like, oh, he's from Groupon.
+And I'm like, wait a minute.
+This is kind of interesting because I actually worked for Groupon years ago.
+I was part of a company called Optiva in Chicago that was acquired.
+And I was their chief scientist.
+And I basically stayed with Groupon for a period of time, met many interesting people,
+worked with them and stuff like that, and then kind of moved in.
+And it was funny to go and recognize that GeekFest is actually something that we started at Optiva
+that basically just sort of became part of Groupon culture.
+So it's great you guys are holding these events and outreach to the community.
+All very nice stuff.
+I think it's great.
+So tonight, though, I want to talk about testing.
+Anybody doing any testing at all?
+Yeah, yeah, yeah.
+And it's interesting about this because I think, you know, testing, we all talk about it.
+We all do it.
+I don't know that we really take the deep dive into it as much as we should and understand what it's for.
+And I think there's this interesting thing that when you actually sort of look at something,
+look at what its purpose is and if it serves multiple purposes, things like this,
+quite often you can see like the points at which you can vary certain things,
+maybe get some kind of an advantage that you may not have seen previously.
+So, you know, my history in the industry, you know, I kind of got involved in the big, you know,
+renaissance of unit testing that happened in the early 2000s.
+And, you know, of course, I led into working with legacy code and I kind of like, you know,
+famously defined legacy code as code without tests, right?
+So, of course, you know, let's push this testing thing as far as we can go.
+But the ground of testing has been around for decades, right?
+And there's been a number of different views of what it is and what it stands for.
+About that time, I ran into some people.
+I was invited to like this small little conference that had the authors of this book,
+Lessons Learned in Software Testing, which is a great book.
+But these three people, Kim Kainer, James Spock, and Brett Predicourt,
+were all very big people and are still very big people in the testing community.
+And it was kind of fascinating because I was brought in with several other developers
+to kind of like show them some of the, you know, refactoring test-driven development
+and some of these, you know, nascent practices that were kind of like being developed at that time.
+And, you know, the great advantage for me was to go and actually sit down with these expert testers
+and learn from them.
+And one of the things that kind of came up, you know, they were seeing what we do and stuff like that.
+And they said, have you got any questions for us?
+I said, yeah, you know, just, you know, people refer to black box testing, white box testing, user testing,
+all these other things.
+I want to see like a Venn diagram of all the testing types because it seems like everybody uses different terminology
+and it all means different things.
+And, you know, I wish I'd taken a picture of the flip chart where, you know,
+this was all kind of like sketched out.
+So I don't have that.
+But just, you know, looking online, I found, you know, there's just like people going
+and developing taxonomies of the different kinds of testing.
+There's quite a few of them.
+And it ends up being very confusing terminology.
+So for us, what is testing for, right?
+It's like when you look at, say, unit testing, you know, is it about correctness?
+Is it about existing behavior?
+You know, we have all these different things to think about.
+So I think quite typically, though, the first goal that people really approach with testing
+is to go and try to have fewer errors in production.
+And overall, that's what we really want to go and have in general when we're developing, right?
+Errors in production is not all that great of a thing.
+You know, it basically goes and, you know, gets in the way of the other things we want
+to do because you've got to take time to fix things and all this other stuff.
+So how do we really approach that?
+Well, if we're aiming for quality, an interesting thing that's worth considering is that we don't
+really get quality the way that we expect to.
+And I first had this insight, you know, years ago, I was talking to a friend of mine in London,
+Steve Freeman, who's actually here at the GoToConference also.
+And he was part of a team in London that was actually doing some of the very early work
+with, like, developing mock objects.
+He was actually on the team where they came up with that idea of doing mock objects
+and stuff like this.
+And I thought it was kind of fascinating because the style of TDD that they were doing, which
+was very mock intensive, was all about going and getting objects by themselves and kind
+of like you weren't going and testing, you know, three or four objects working together.
+You were testing one thing with all the stubs, the mocks that were kind of like, you know,
+connected to it.
+And I remember being kind of, that wasn't the way I was doing it.
+And I remember being kind of shocked by it and saying to Steve, you know, this is kind
+of interesting.
+It's like, you know, when you test several production classes working in collaboration,
+then you get more testing because you're going and testing how they're working together
+completely.
+And so surely you must be having integration bugs when you go and you take these things
+and plug them together.
+And he said, no, not really.
+Right.
+And they were actually doing no automated acceptance testing either.
+Yet they had a remarkably low number of bugs.
+And so I started thinking about this and started thinking about what that really means.
+And the thing I kind of centered on after, like, you know, reflecting on this and looking
+around at various different things was that essentially the testing is almost like a foil
+in a way.
+It's almost like a way of kind of tricking us into quality.
+Right.
+So when you have a test failure for your unit tests, it's, how do I put this?
+When you have a test failure, is that test failure about finding a bug?
+Right.
+Particularly if you're doing TDD.
+And it's like, it's, it's kind of funny because it's really feedback as we're going
+and moving along the path towards going and having a bit more quality.
+Right.
+So this process when we're doing say TDD, for instance, is about specifying a piece of
+behavior, making the test fail.
+So we have a test failure.
+Then we satisfy the test with that additional piece of behavior.
+And that's not the same as going and saying, Hey, I've written all this software.
+Let me write tests to go and see whether it's working or not.
+Right.
+So we start with a failure.
+We go and build up behavior in response to failures.
+And so that's not about finding errors.
+It's about building things.
+Right.
+So it's a very different thing.
+And if you can work that way and arrive at a lot of quality, what that really means is
+that you're getting the quality by concentration, by basically going and thinking about how all
+these things tie together and, you know, not doing anything which is outside the realm of
+your understanding.
+So you concentrate, you concentrate on what does this object have to do?
+How does it interact with this object?
+And because you've thought through these cases, you just end up writing code that isn't
+wrong.
+Right.
+It's kind of fascinating.
+So it's not the testing, finding errors.
+It's us basically applying mental effort in order to go and actually not put them in
+in the first place.
+Now, that's kind of an interesting thing because we don't tend to appreciate that all that much.
+That testing is like this ritual that we do in order to go and actually arrive at quality
+without, you know, using it to find errors necessarily.
+But it turns out that this line of thought is something that's kind of, you know, evolved
+through the industry over time.
+I remember looking into this.
+It's a book by Alan Stavely and it was describing something that was called the clean room software
+design process.
+Right now, clean room means many different things in security and new product development
+and stuff like that.
+But when they describe what they call clean room programming, what they were talking about was this.
+They want to achieve very high quality.
+So what they did is they devised this process where there was no testing at all.
+Sounds like a paradox.
+Right.
+What they did is they said, we are not going to have any testing, so you can't depend upon testing to save you.
+Instead, what we're going to do is have everybody work on pieces of the system and then have massive code
+review to make sure that the code is doing exactly what it's supposed to do.
+And through this review process, we will arrive at very high quality.
+Right.
+So it was considered to be a very labor intensive device to go and do this sort of thing.
+They did have like one catch at the end.
+And the catch was that they allowed some statistical testing at the end to go and just like run
+through random scenarios and kind of see that things were OK.
+But there was no unit testing or anything like that when they were doing this.
+And so, you know, I love looking through books and seeing how people have done things in the past.
+You can always pick things up.
+They mentioned, you know, what their error rate was.
+They were doing this for, you know, flight control, satellite control system for NASA.
+So 40,000 lines of Fortran bug density was 4.5 per thousand lines.
+OK.
+And they just basically got it down to a really, really minuscule amount by going and applying this process.
+All right.
+And no testing at all.
+So if we have this, this zeal for going and testing everything, it's like, wow, what are we really doing?
+You know, is it worth it?
+Are there other ways of achieving quality?
+Yeah, it looks like there are.
+You dig deeper into what they were doing.
+You find that they had a particular like ritualized way of doing things.
+One was that for every piece of code that you wrote, you had to write a comment above it.
+OK.
+And these comments were basically in a particular kind of language, more like a formal language.
+And they were called intentions.
+Right.
+You have to go and basically write an intention specification.
+They would call it the intended function of a particular piece of code.
+So if you can see here, it's like this is just really ridiculously simple code.
+You know, if Y is greater than X, we're going to essentially do a swap.
+And so you can see that we have a predicate up there.
+We say if Y is greater than X, then we're going to go basically have this function that
+we apply where we're going to swap one for the other.
+And then we, you know, we have the code to go and do this.
+And this, you know, really, you know, aided the kind of review that people are doing,
+you know, all the time.
+And, you know, it's like, write your code.
+Let's sit in a big conference room and do all of our review of the things to have these
+intended functions.
+But there's an interesting thing in the book that described this.
+And this is the paragraph here.
+When are these intended functions written?
+They can be written after the code is written.
+If you didn't do, if you did this, you would use an intended function for each construct
+to document what you had in mind when you wrote it.
+Sometimes you might even need to look at the construct itself to drive the function
+that it actually computes and use that as the intended function.
+But here's the kicker.
+Experienced programmers would probably do things in the opposite order most of the time.
+They would write the intended function first and then go ahead and write the code that satisfies it.
+Does that sound like anything we do?
+Right?
+This is like, you know, ages before test-driven development.
+But the idea there was the same.
+We basically sort of like reflect on what we want to do.
+We go and we sort of create a specification of what we want to go and do.
+Then we write the code to go and meet the specification.
+And again, they reached, you know, very high levels of quality doing this sort of thing.
+It's funny because I was talking about this a while back.
+And I'm saying, gee, this is kind of crazy.
+You have like, you know, maybe you have six, seven people in a room going over every particular piece of code
+and trying to go and figure out exactly what's going on with it.
+And then you achieve higher quality this way.
+But I'm running into more and more people these days who are doing mob programming.
+Have you run into this at all?
+Yeah?
+Some people have.
+Some people haven't.
+Okay.
+So mob programming is essentially a style of development where you have a team in a room with a projector.
+And they basically all code together on the same thing at once.
+And, you know, it's like almost pair programming on steroids in a way, you know, that you're doing this.
+And it looks like it's really, you know, like a thing which might be a huge waste of effort.
+But there are some companies that people do this and they're very happy with the results they achieve.
+That's just another knob we can apply in design to figure out how we develop software.
+So, yeah, this looks kind of like TDD, doesn't it?
+So, yeah, we can arrive at this thing.
+Quality comes from deliberate thought.
+I think to kind of like step back into this for a second, the thing that I kind of noticed is this reminds me of something that I used to do long ago.
+Has anyone ever heard of design by contract at all?
+Yeah. So it's like an idea that was first articulated by a guy named Bertrand Meyer.
+He came up with a lot of the early design principles that are still taught today in software engineering.
+And, you know, in his thing, he said, look, if we have some function that we're going to go and write, like, say, a square root routine, for instance,
+we can have documentation that goes and says we require that the argument for this thing happens to be greater than zero.
+And if it is greater than non-negative, we require that the argument has to be non-negative.
+And if it's non-negative, then what you get back is a result that when multiplied times itself goes and equals the input that came in.
+So it's almost like a way of going into these specifications when you indicate a contract for a particular routine or function or something like this.
+And I was working once on medical device software, and we decided to take this as an initiative to use design by contract to specify the conditions under which a particular function should operate and then exactly what you can expect at the very end of it.
+And one of the things I discovered in doing this was that, yes, it aided quality.
+But the fascinating thing about it was it really forced you to simplify your code, right?
+Because you didn't want to be staring at these preconditions that had, like, multiple clauses and craziness.
+Usually when that happened, it basically meant kind of break things down into smaller pieces.
+And that kind of, like, applies a bit of design pressure in much the same way that we have with, like, things like writing tests at the same time as you write your code.
+You get some pressure that gives you feedback about whether your design is too complex or could possibly be simplified.
+So, quality comes from deliberate thought.
+And we can introduce constraints to kind of force things.
+I think TDD is a constraint that kind of forces us to go and think about how we're doing things.
+Anybody ever hear of property-based testing at all?
+Yeah?
+So, it's starting to become a little bit more popular.
+Well, first off, how many people are doing TDD here?
+Yeah, some.
+Great.
+Okay, yeah.
+That's weird.
+There's a bit of a hump to get over with that because quite often people look at this and say, oh, it's too much work.
+It's kind of hard, da-da-da-da-da-da.
+Well, you can feel better about TDD because this is harder than that.
+All right?
+Property-based testing is about saying that here's a particular piece of software that we want to test or a piece of software that we're planning on creating.
+And what we want to do is we want to basically determine mathematical properties that will hold true for that software.
+And then what happens is we're able to encode these properties and there's a testing harness that will go ahead and create random data based upon those properties, run it against your code, and tell you whether any of those random cases will violate those properties that you've initially created.
+Sounds kind of like TDD in a way, doesn't it?
+Yeah?
+Except it's a little bit weirder.
+Okay?
+So here's some F-sharp code and they basically have a sort routine that they're going and testing here.
+And if you think about things that can happen with sorts, right, it's like think about things that you can say will be true for a sorting routine.
+What they're encoding here is the notion that if you basically have a sorted list, or you have a list, and then you prepend onto it an element which is smaller than all the other elements, then that will still be the element after you've sorted the list.
+All right?
+So it's kind of like you have to think in a rather mathematical way.
+What are the things I can know should hold true in general about, say, a sorting routine?
+And so you code these things up, you run the checking framework, and it goes and generates cases, a bunch of different cases, and it tries to find one that's going to go and cause that to fail.
+And if it does, what it does is it goes and gives you that case and you're able to go and understand that you have a bug in your code.
+So to give you an example of this, a friend of mine basically put up this interesting problem.
+He's trying to go and find a nice functional solution for it.
+What it is is you have an array of arrays, essentially an array of tuples, right, pairs of numbers.
+And what's supposed to happen is that if any of these things overlap, they get merged, right?
+So if you look at this, you can say 0, 3, 1, 2.
+1, 2 would be contained completely within 0, 3.
+So we can get rid of 1, 2, and 0, 3 encompasses it entirely.
+We have 4, 5, 5, 6.
+Since 5 and 5 overlap, that would become the interval 4, 6, right?
+So you take an entire array of a bunch of these things, and you're going to end up either with the same number of things you had previously
+or some smaller amount once you've, we were calling coalescing, coalescing the intervals.
+So how would you approach testing this from a property testing point of view?
+Well, one thing you could do is just, you know, and here's what the answer is for this particular one,
+just start thinking about it, right?
+And it's like anything else.
+If you get used to doing this, you start establishing certain heuristics about how to go in particular,
+articulate particular properties that can be used.
+So a simple property is that the count of the number of intervals that you have afterwards is going to be less than or equal to the, you know,
+the one you started out with.
+And it makes sense.
+We're always going to be either keeping the number of intervals the same or reducing it.
+We'll never be increasing some.
+If we have at least one interval, then we have at least one result.
+Again, a simple property.
+The least value and the highest value for the same input and result.
+If we look at the least value and the highest value across all the intervals,
+that should be the same in the output set as it is in the input set.
+So there's a bunch of different things you can kind of test for with this.
+You articulate them and then you run and find out whether it can determine an input data set that goes and violates these things.
+So it's kind of interesting.
+This is a little bit different than what we do with traditional unit testing.
+In unit testing, we're all about finding particular cases and writing them, you know, out as particular cases, right?
+Whereas with this, this is more like going and saying, I want to determine the properties that should always hold true
+for this particular routine that we're writing, this particular function.
+And so, yeah, you have to think differently if you're going to do this sort of thing.
+Interesting thing about this, though, too.
+It's like, does this apply some design pressure against, you know, the stuff that we're doing?
+Yeah.
+I mean, imagine writing really complicated properties to go and try to figure out what's going on with something.
+It's like you'd probably want to simplify that and say, well, gee, I can break this into two functions.
+This one will be easier to go and test independently.
+I can determine its properties very easily.
+And I can compose these two things together.
+And, you know, with that basically go and see that these things are kind of working.
+All right.
+So that design pressure is kind of handy for us.
+Okay.
+So I know there's other tactics we can do to go and basically increase quality as well.
+And this is one that I'm getting a little bit of flack for recently just because there's a lot of people that have been, how do I put this?
+There's a lot of people who've been traumatized by JavaScript.
+Has that ever happened?
+All?
+All?
+Yeah.
+And there's that, right?
+And it's interesting because I don't know how we got to this point where it's, you know, it's an okay language and we're making it better.
+But it's now become so pervasive because it's been installed in every browser.
+And it's like now we've got a TypeScript and we have all these other things.
+All these things we can do that we want to try to bypass it and its problems, right?
+But, you know, having been in the industry for years and years, it's amazing to go and see suddenly everybody goes and decides that dynamic typing is bad.
+So let's go to static typing.
+Static type all the things.
+Right?
+And then, you know, because you've been through the cycle more than once, it's like, okay, suddenly you're going to get to that point.
+If you're going to say, oh, no, this is too restrictive, a slow sound development, all this other stuff.
+Give me something that's not dynamic again.
+And, you know, we'll move back to dynamic typing a little bit later, right?
+I think the more reasoned way of looking at this is that for every tool that you have in software development, you know, there's places where it applies and places where it doesn't apply.
+There's no universal, this is the great thing, right?
+That's just, we used to call those silver bullets, right?
+There's no silver bullet.
+And static typing isn't a silver bullet, neither is dynamic.
+But the thing with this that's fascinating, introducing hazard, I can kind of like approach this with a little example.
+God, I'm trying to remember if this was actually first in Germany or in England.
+They discovered quite a while ago that they were able to go and reduce accidents in a small town by going and making the pedestrian areas and the streets ambiguous.
+So you're driving along, driving along, and all of a sudden you get towards the center of the town and it's like, whoa, there's a parent with a child in a carriage.
+There's a kid playing with a ball over here.
+I must slow down because is this the street or not the street?
+Introducing that ambiguity ended up giving people a sense of care about what they're doing, right?
+Does this apply to software at all?
+No.
+Actually, I think it does.
+It's a question of whether it's worth it or not.
+An early experience in my early days of programming, I learned C as a first programming language because I thought it was pretty hard and I didn't know if I could be a programmer, right?
+This is way early on.
+And so I taught myself C and then I went to university after learning C for computer science.
+So I'm sitting in the computer lab and I'm sitting next to this woman.
+She's doing her work.
+It was about three quarters of the way through the course that we were taking.
+And it was a course in Pascal.
+Have you ever heard of this?
+Yeah.
+Ancient stuff, right?
+And coming from C, it looked terribly restrictive.
+It had all these crazy little rules.
+And I looked over her shoulder and I saw she had an array subscript out of bounds exception.
+And I looked at it and I said, whoa, it does that.
+It checks the array subscripts at runtime.
+And I didn't know that at all.
+And this was after having three quarters of the course and writing a number of projects and stuff like that.
+And what I realized was the trauma of going through C made it very likely I was never going to do that because if you have once you go out of index, you know, go out of bounds and see you're in trouble.
+You're in serious trouble.
+Right.
+So you learn not to do that very quickly.
+Right.
+So it's kind of like there's this thing, a little bit of hazard can make you a little bit more careful than you would be otherwise.
+And again, it comes down to, you know, is it worth it?
+Right.
+How many people use GPS to get around?
+Yeah.
+Yeah.
+I use it all the time.
+So I live in Miami, Florida.
+I've lived there all my life, moved recently to another neighborhood, another area.
+And there are lots of places I don't know how to get to anymore.
+And the reason why is because I use GPS to get practically every place in my car.
+And what I've discovered is that the part of my mind that pays attention to GPS is the part you need to remember the route.
+Right.
+Some kind of how do I get there?
+GPS.
+It's like, oh, I'm there.
+How did I get here?
+I don't really know how that works.
+Right.
+So, you know, we tend to do this to ourselves that we will use technology in a way which goes and gives us incredible benefit.
+But it also causes certain little skills to atrophy.
+And we have to be kind of cautious about this thing.
+So, you know, again, I love static typing.
+I think it's powerful, very useful in certain contexts.
+But, you know, actually going and having the opportunity of programming without a net a bit goes and sort of gives you, you know, some power as well.
+And it's kind of interesting.
+Another tactic you can use approaching quality is putting things into production.
+Okay.
+So have you ever done this thing where it's like, you know, here's the thing.
+We've pushed testing so, so far.
+Right.
+So, you know, we have a pipeline.
+We put things, you know, we go through all these hurdles and testing and stuff like that.
+Finally gets into production.
+By the time it gets into production, we hope that nothing bad has gone wrong with it.
+But, you know, there are some teams where basically they don't do this, at least for small things.
+It's a matter of them going and saying, let me change something, a small thing.
+Let me go and roll it out to a small number of very tolerant users.
+Let's see how they do it.
+Then we'll roll it out to a bigger group and a bigger group and a bigger group.
+Right.
+And they actually get away without having much testing at all.
+Is that okay?
+Yeah.
+Got to love Twitter.
+Right.
+So talking about this just recently on Twitter, like a couple of weeks or so ago, and somebody
+was, you know, labeling me as like this horrible person because you're forcing work on prod support.
+You're forcing work on all these people.
+And it's like, why should they pay for your mistakes as a developer and stuff like that?
+I'm like, wait, you know, aren't we one team?
+Right.
+It's a choice an organization can make about how they're going to approach things.
+Right.
+So I'm not saying this is the right way.
+But again, the thing with this is that this is a way of going and building up that feedback loop.
+Right.
+The feedback loop of like, I'm trying something, I get feedback, I fix it.
+And we have to always like in development, go and figure out what's the cost of that feedback
+loop, you know, in terms of what we do and what kind of feedback we get and whether it's
+okay.
+You know, if it's something which is, you know, prone to lose life or money, definitely wouldn't
+go and do things this way.
+But for certain things, it can be fine.
+This basically draws to another distinction as well.
+I think there's a big difference in the industry between tended and untended systems.
+And nobody really seems to talk about this very much.
+I think it's mainly because we're moving more towards having universally tended systems.
+What I mean by this is if something goes wrong, can somebody fix it?
+Right.
+And so, you know, the great thing is that we have all our stuff in the cloud these days.
+And suddenly if there's something wrong, it's making step in and go and do something about
+it.
+Other systems, not so much.
+You know, if you send a probe to the edge of the universe, right, like someplace out by
+Pluto and stuff like that, something goes wrong.
+You know, actually they can fix it, but it's going to take, God, how many hours does it
+take speed of light, you know, from here to the edge of the universe to want to actually
+do a firmware update, which they can do, right?
+You're in an elevator, right?
+It's like, would you want to go and have the elevator just hang or make sure that it's
+always running, right?
+So our responsiveness for hazard has a lot to do with whether we have people there to
+want to actually attend the system or not.
+And that's kind of important for us.
+So I think a thing about this that kind of ties back into process is that the situation
+that we find ourselves in goes and gives us the options that we can take advantage of.
+Has anyone ever heard of this at all, programmer anarchy?
+It's like it's a meme that didn't really kind of carry too, too far.
+But years ago, Fred George, who works in London, was doing something very interesting.
+He was working with a company that was essentially doing like this online arbitrage type thing
+where they would say, wow, you know, over here people are selling birdcages and they have
+a thousand of them.
+Let me put up a web page to find out if anybody wants to buy them.
+Oh, I've got interest.
+Let me go and buy all those birdcages and sort of like set up a script to go and actually
+sell them off someplace else, right?
+It seems like a really interesting business model, right?
+But the thing that happened with that is they found that they could do very little of what
+we normally consider necessary in software development process.
+So he started talking at conferences and saying, this is interesting.
+We have no managers because the developers look for the deals.
+They decide what deals are possible.
+Then they write some code to go and do this.
+And there's no real refactoring because the code is simple.
+And they can use any programming language they want to because essentially the stuff isn't
+going to last very long.
+It's just going to die and go away.
+And by the way, they call these microservices at the time, right?
+So this is really, you know, this is back when the idea was first kind of germinating
+in a sense.
+And no real testing because everybody going very quickly A, B things with their environment
+to find out whether things were really working or not.
+So because of the fact that the code was transient, it was going to be thrown away.
+No real need to refactor.
+No real need to go and test.
+No real need for management oversight.
+They were going to go and just do a lot of, you know, very interesting things.
+If you tried to go and take a development process that loose and apply it anyplace else
+that had more serious constraints, it probably wouldn't work.
+But our environment basically goes and tells us what's really, you know, what kind of opportunities
+we have when we're doing things like this.
+And I think we can look at testing in the same way, right?
+Testing is a great tool, but it's like it's contextual as well.
+You have to figure out, you know, what do you really want from it?
+And then figure out, you know, what means do you have to go and get that?
+And testing is just one of many different means in some cases.
+It's interesting with this, too, because sometimes the things that we do with testing can actually go and be counterproductive.
+Has anybody ever heard this phrase before, moral hazard?
+It comes from economics, and it's kind of like when you try to fix a problem and you can fix it in such a way that you actually end up inducing more cost into the system.
+So if you basically say to people, I'm going to save you, I'm going to save you no matter what, sometimes they take more risks.
+Okay, an interesting classic thing while we were talking about, talking about pedestrians and that street thing, you know, I was talking about in cities.
+One thing they found in traffic safety studies is that the advent of like airbags and all these other things that go and basically, you know, make accidents more survival also cause people to go and drive a little bit more carelessly.
+People drive more carelessly now than they did, you know, back in the early days of automotive, you know, engineering.
+So what do we call a moral hazard in software?
+Having a QA department, right?
+Yeah.
+Now, you know, it's a joke, right?
+But the thing is that there is a thing about this, right?
+QA can be extremely valuable, but there's a danger you can have depending upon what the relationship between development and QA happens to be.
+And I've seen this over and over again in the industry where essentially developers are writing code, developers are writing code, and then suddenly like QA finds a bug.
+Great.
+QA doesn't find a bug.
+And then suddenly the issue is like, QA, why are you failing me?
+You didn't find the bug, right?
+Is that an acceptable response to this?
+Yeah.
+And I remember having to talk to a CTO one time and said, look, QA is a big mirror on development, right?
+It's never their fault, right?
+Developers put the bugs in, and it's like, you know, if QA finds them, you're lucky that way, right?
+But this is a situation we can get into when we're basically going and sort of like looking at, you know, how we're going to organize testing, say, some company.
+So, you know, the general rule for this is actually if you have a kind of situation, what you want to do is basically have QA people involved extremely early in the process.
+Have them basically be almost like consultants that kind of come in and, did you think about this?
+Did you think about this?
+Did you think about this?
+Did you think about this?
+And then as people write code, you know, they end up in this situation where they're just, like I was saying earlier, not injecting the bugs because they have done things that prevent them from even happening in the very beginning.
+And that's pretty powerful.
+So, what other goals can we have for testing?
+You know, one goal, and this is like really close to my heart because of the work I do with legacy code is to basically have them aid our maintenance, aid the refactoring work that we do.
+If you have really good test coverage, then refactoring is pretty easy.
+You can do a lot of refactoring, discover very quickly whether the refactorings that you applied were behavior-preserving or not, and then kind of move on to the next thing.
+The thing about that, though, is that it's a little bit different than what we wanted unit testing to be in the very beginning.
+In fact, actually, this is like part of the definition of unit testing on Wikipedia.
+It's basically talking pretty much about, you know, finding errors again, right?
+When I work with legacy code and I add unit tests, the thing that I tend to do is not try to figure out what the software is doing before I write the test, right?
+Instead, I'll say, okay, I'm really curious about what the software does.
+So I'll be in the test harness, and I'll write some expression, and then I'll say that expression should be equal to the empty string.
+And I know it's not going to produce the empty string, right?
+But I don't care.
+I put empty string in the test.
+I run the test, and it fails.
+And then what do I do?
+Well, I take whatever came out of the test and put it where the empty string was.
+And now the test passes.
+Yay, right?
+Is this just because I'm lazy?
+I am lazy, right?
+But is it good?
+Yeah, it really is very good.
+And we're almost brainwashed by this by university education, I think, still to this day.
+The notion that testing is there to go and verify that code is doing something based upon some specification.
+Whereas, you know, there's a funny thing that happens with this.
+Has anybody ever gone and done this thing where you fix a bug, and then you roll it out into production, and suddenly there's a problem?
+Because people are depending upon that behavior and thinking it was a feature.
+Yeah?
+Has it ever happened?
+Okay, who hasn't this happened to, right?
+But here's the thing about this is that what that really means is that when we release code in a way it becomes its own specification.
+And the important thing for us is not to know whether our code meets some abstract specification, but rather whether it's still doing what it was five minutes ago or 10 minutes ago.
+And so we can write tests that go and actually, you know, kind of like document this behavior so that if we do refactor, we can discover, you know, did we break anything?
+If we had a feature, it's like, well, we added that feature, did we break anything else?
+You discover these things.
+And so we came up with terminology around this years ago.
+I call it characterization testing.
+We try to characterize the behavior of the system.
+And then when we have that behavior, then we know when we've made any kind of change at all.
+And this kind of goes back to another counterintuitive thing, too.
+This was actually written up years ago as an anti-pattern, the golden master approach, right?
+So what you do is you run your code and you produce all these results, then you run it again and see if it goes and matches the results.
+Usually at a high scale using random inputs and stuff like this.
+That's generally considered like a cheap, lazy way of doing things if you don't want to write unit tests.
+And the thing is, though, it still, it does work.
+The downside with this is that if you're doing it at a higher scale, you'll get test failures that are really kind of hard to figure out
+because, first off, you didn't create the inputs and it's like, you know, where did I deal with this?
+You usually want to go and apply it at a lower scale.
+But this is, again, about going and finding, you know, it's like, what are the invariants?
+What does the software really do?
+And using that as a baseline for the things we want to go and do going forward.
+So I think there's this bigger goal with testing as well.
+We have it for, you know, correctness, I mean, for quality, also for going and doing maintenance.
+But validation, there's an interesting thing.
+I may notice the difference between verification and validation, right?
+Verification is when you're working against a spec and validation is just whether something's acceptable to the end user.
+I think we're moving further and further more towards validation.
+You know, it's like there are domains where things have to be right by a particular specification.
+I mean, anything involving money quite often is like that.
+You know, things like biomedical software, which I worked in for years.
+You do have a spec for particular things, certain things that should happen or shouldn't happen.
+But there are a lot of things which end up being about this space where you're going and doing something.
+And it's like, does the user want this or not?
+And those are just two different ways of going and looking at software.
+And they can basically, you know, lead towards different approaches.
+You know, particularly this thing of actually testing once you roll things down into production.
+That's a very validation-centric activity.
+And so you can approach that for some of the less critical areas of your software.
+So, yeah, quality, maintenance, and validation.
+You know, quality forces thinking, maintenance, you know, it's about establishing behavioral invariance.
+And validation is about whether this is acceptable to the user.
+And this is just really where, you know, where we end up kind of going with testing.
+And I think it's funny.
+I'm just going to go and mention this one piece again.
+Remember I mentioned that program anarchy thing.
+We're seeing more and more of this these days.
+The notion that, well, let's take some code that we have and throw it away and rewrite it.
+Has anybody ever done that?
+Take a microservice you've got, throw it away and rewrite it?
+Yes?
+No?
+Okay.
+Yeah, a friend of mine, Chad Fowler, who used to work here in Berlin, was team he had.
+They were doing exactly that.
+It's like that microservice architecture.
+And he said to the team, it's like, you know, anything gets too complicated.
+I want you to throw it away and rewrite it.
+And basically having that discipline is good because, you know, we can really, we can be held captive by the code that we've written.
+And this happens all the time.
+I've gone to China a number of times and seen like, you know, 30 year old applications using antiquated architecture, antiquated software, things that nobody really wants to work on, but they can't replace it because it's become too big and muddled and interconnected.
+If we can keep things nimble and rewrite pieces when we need to, we can also go and get, you know, a better working experience, but also go and arrive at code that might go and live longer and in a better state than what we currently have.
+But what I mean by transience is also something a bit more.
+This is funny.
+I don't know if this is part of your experience or not.
+I remember going to stores as a kid and saying, oh, you know, I'm going to go to the store.
+That shirt looks really good.
+I'm going to buy that shirt.
+And it's like, well, I'm not really sure whether I'm going to buy that shirt or not.
+Right.
+And so I go home and I think about it, you know, get my money together, come back three days later.
+It's like, yeah, there's that shirt.
+I'm going to buy it.
+Right.
+It doesn't happen as much these days.
+Anybody know why?
+Amazon.
+Huh?
+Amazon.
+Well, there's that.
+Fair enough.
+But I think Amazon even actually exacerbates this.
+Well, no, it's really more durable.
+Retailers in the U.S., at least, you know, before Amazon, they were really doing this thing of going and saying, look, here's something that's in the store right now.
+You can't count on it being there tomorrow.
+Right.
+They would actually go ahead and sort of like try to force the sale by going in and sort of like giving you the sense that the things you want to buy.
+It might go away.
+So you'd better buy it today.
+Right.
+Otherwise, it's not going to be here.
+I think that we're doing this more and more in software without really being conscious of it either.
+What we're doing is we're actually going and sort of like making people accustomed to going and dealing with user interface changes and feature changes in very subtle ways over time that in the past we never really would even think about doing.
+All right.
+I mean, how many, you know, how many things it's like Twitter gone through, you know, over the years of user interface change.
+You know, just that every application these days is going kind of like changing things in subtle ways and moving forward with things.
+So for us, you know, basically behavior is an older slide.
+Right.
+Behavior preservation is not it may not have to be as critical for certain areas of our code.
+And again, we can factor this in when we just try to choose what kind of testing approach we want to have with things.
+So, yeah, we write services when you want to.
+Pick a testing approach which is valuable for you, even no testing, and just use it as a tool, I guess, is the main thing I want to go and say.
+I don't know, this is code to go and actually deal with that interval problem that I mentioned a little bit before.
+It's written in Ruby, which I don't know.
+Does anybody in Groupon still use Ruby?
+Can I say?
+Okay.
+Yeah.
+So it's used in different areas.
+But it's interesting.
+We can try to go and approach higher levels of abstraction, which makes some things a bit more maintainable than they would be otherwise.
+And that's kind of powerful, too.
+So another goal for us is to go and basically have ease of development by getting the feedback we want when we want it.
+And, yeah, that's about it.
+So I just want to kind of open it up now.
+Any thoughts or questions about this stuff?
+Yes.
+Yeah.
+Okay.
+You mentioned that you would address both static typing and tag typing.
+So it's like static type language type of test.
+Because, for example, JavaScript, you need to check if the return value is string or whatever.
+In F sharp, before I make it compile, after it compiles, I know there is no bug because logic is inside the language.
+Yeah.
+So is like language a part?
+It is a test.
+Yeah.
+In fact, I joke about this sometimes.
+I say that the type system is the set of tests that the language designer could think up without ever seeing your program.
+And once you know that, in a static type language, there are some tests you may not have to write because you can use the type checker.
+You're going to get feedback as you do things.
+But I think with this, it's like a double-edged sword.
+It has positives and it has negatives.
+Don't get me wrong.
+I've worked in Haskell.
+I've worked in a number of static type languages.
+I think they're great.
+I think the thing which is interesting is that there is also an ergonomic choice about this, about how you approach work.
+I think some people prefer to work using bricks and other people prefer to work with clay, as long as you can take that clay and fire it and make it hard at some point.
+Right?
+So I think we have to find the sweet spot in typing that goes and works in many cases.
+So, yeah, I think in some contexts it's perfectly fine.
+I think the thing that I'm a little bit scared of now is I think it's, again, I hear a little bit of trauma in your voice about JavaScript.
+Right?
+And I think that that's kind of sad that this, that experience of JavaScript has kind of affected people's perception of dynamically type languages because they do have use in particular contexts.
+But we'll swing back and forth about this.
+I think this happens.
+Another question is because you are the expert about legacy code.
+Yeah.
+So whenever, like, I'm introduced to legacy code and I, okay, first write test work.
+And legacy code is, like, it's so coupled usually that it's so hard to write a proper unit.
+I want to, like, I want to delete it and write it from the start.
+This is not the way.
+So what do you do in those cases when the code is way?
+Joke, right?
+Joke, right?
+Joke, right?
+Joke.
+The core of it, and I can basically get to the core of it, is that it is a paradox that we want to write tests for code and it's hard to.
+That means we want to refactor it to make it testable.
+But then to refactor it without tests is kind of dangerous in a way.
+So most of the meat of that is in the appendix of the book where I talk about it's like 24 different dependency breaking techniques.
+And these are simple refactorings that you apply that you can visually inspect and see will work, see that things are still working.
+But there are only enough breaking dependencies in order to go and actually get the test points in.
+So you try to do this at a higher level around something you want to go and change, get those tests, and then underneath it you can do the refactoring you want to go and do.
+And I think, you know, the other thing I mentioned earlier in this talk, which I think is very powerful to recognize if I never put in that book, is that writing the test is relatively easy.
+Once you break dependencies, the reason is because it's a matter of going and asking questions.
+I say, oh, what happens if I do this?
+I type that and then you find out what the answer is and then you put that down as the answer and get your test to pass.
+So you're going through this process of discovery to see what your code does.
+And then you have a better base on which to go and do your future development with it.
+Okay?
+Yes.
+In the beginning you mentioned that there was a project that they had just been tested and they didn't have integration tests.
+And they were fine with that.
+And, I don't know, maybe in, when you take under consideration of functional reactive programming, Rx.
+There, for unit testing, it seems to me a bit harder because you also have some, for another dimension, so time depends on what event goes in.
+And based on the observables you need to, you would need to unit tests based also on time.
+Yeah.
+I'd love to be able to abstract away time.
+And I love the design of Rx, but I've actually never done work in it and done testing with it.
+But I think the trick that we often use with time is to either mock out time in OO programming or sometimes time is a sequence.
+And if we can kind of like make time into data, then we can go and fabricate the cases that would basically, you know, behave the same way as they would when it was really using real time.
+But I don't know because I've not worked with Rx to see what the testing situation is like in reactive extensions.
+And don't you think that it hardens testing or development because you have so much more input, you have another dimension?
+Mm-hmm.
+Yeah.
+Well, you know, time is monochromatic or monotone.
+I don't know.
+It depends on how deep you go to relativity, right?
+Time is tractable.
+You know, but I think the key thing in many cases is to turn time into data if you can.
+And again, this is going to depend upon how much support a particular framework gives you for going in abstract and away time.
+So I don't think that the problem itself is intrinsically difficult as much as the instrumentation.
+The bigger thing is really, I guess, the thing you might be touching upon is asynchronous.
+And that's harder.
+You know, you have to go and sort of particularly think through these cases of if things come at you out of order, you know, if they are delayed, what do you do, all these things.
+But again, it's like knowing what those particular cases are.
+Yeah.
+And how did they resolve the problem of not having an integration test between elements?
+Between elements?
+They didn't see it as a problem.
+They just basically found that it worked.
+And I think this was the thing of, like, you write something, you know you're talking to another object, you're thinking about how you're going to interact.
+Maybe you created that other object five minutes ago or something like this.
+So you are on both ends of the protocol when you're working on things.
+I think, I suspect that's how they did things.
+I'm not, you know, fully sure with it.
+But I think the key thing for that is to go and recognize that, I don't know, when you see that testing can be a ritual like this, one way of looking at it is to say, well, maybe we don't need testing.
+And I don't think that's true.
+I think it's very powerful, but it kind of changes your focus to recognize that it's how you are thinking about the problem that prevents the bugs from getting in the first place.
+So, yeah.
+Yes.
+Yes.
+About the Rx Java testing, in a few months our book will be out, there is a chapter about testing, so just wait.
+Excellent.
+Yes.
+Please, after the talk, let me get your information so I can learn more about this.
+Very cool.
+Yeah.
+So, if you came to Legacy Project and you only had time to do one type of test, which test would you do?
+It's funny because one of the things I always say about testing with this is that your goal is never to write tests.
+All right.
+Your goal is to solve a specific problem.
+So, an example I'll give sometimes is like, here's a method that has 300 lines.
+Go write tests for it.
+And then it's like people are like, oh, let's write tests, let's write tests.
+But you can waste so much time doing that.
+The bigger thing you have to ask is, what am I trying to do?
+Am I trying to refactor this small piece?
+Am I trying to add new functionality inside this method or something you delegate to?
+And these decisions about specifically what you're trying to go and do will give you the insight into what kind of tests you need to support your work.
+For the most part, I do this with unit testing frameworks.
+And you always have this thing, if you have a feature to add, maybe you're changing five different places and adding something.
+Do you try to go and write tests above those five different places to cover those cases?
+Or do you basically sort of like try to write tests locally for each of the things that you're working on?
+And again, I think there's no there's no mechanical thing about this.
+It's really about us applying our engineering judgment.
+And because ultimately, that's what our job is.
+The goal isn't to write tests.
+The goal is to produce correct software.
+And it's only up to us to decide how much support do we need to basically know that we're doing the right thing with things.
+So, yeah, a lot of my focus is on unit testing because you can get much closer.
+The further you get away, you often have a commentorial explosion of paths.
+And then it's kind of, you know, you may not get as much focus.
+So, yeah.
+Okay.
+Okay.
+Well, thank you very much.
+Thank you very much.
+Thank you.

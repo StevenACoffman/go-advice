@@ -1,5 +1,7 @@
 # How I write HTTP services in Go after 13 years
 
+[From Mat Ryer 2024-02-10](https://grafana.com/blog/how-i-write-http-services-in-go-after-13-years/)
+
 Nearly six years ago I wrote a blog post outlining [how I write HTTP services in Go](https://pace.dev/blog/2018/05/09/how-I-write-http-services-after-eight-years.html), and I’m here to tell you, once again, how I write HTTP services.
 
 That original post went a little viral and sparked some great discussions that have influenced how I do things today. And after years of hosting the [Go Time podcast](https://changelog.com/gotime), discussing Go on [X/Twitter](https://twitter.com/matryer), and gaining more experience maintaining code like this over years, I thought it was time for a refresh.

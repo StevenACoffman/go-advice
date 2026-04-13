@@ -1,35 +1,5 @@
 # Go Developer Advice
 
-This repo contains a curated distillation of the best advice I have encountered, and that I give to any aspiring (Go) developers I mentor.
-
-The [./summary_rules.md](./summary_rules.md) is distilled from:
-+ [Ben Johnson](./Sources/benbjohnson_rules.md), from his defunct gobeyond.dev site: 
-  + [crud](./Sources/benbjohnson/crud.md)
-  + [failure-is-your-domain.md](./Sources/benbjohnson/failure-is-your-domain.md)
-  + [packages-as-layers.md](./Sources/benbjohnson/packages-as-layers.md)
-  + [real-world-sql-part-one.md](./Sources/benbjohnson/real-world-sql-part-one.md)
-  + [standard-package-layout.md](./Sources/benbjohnson/standard-package-layout.md)
-  + [structuring-applications-in-go.md](./Sources/benbjohnson/structuring-applications-in-go.md)
-  + [structuring-tests-in-go.md](./Sources/benbjohnson/structuring-tests-in-go.md)
-  + [wtf-dial.md](./Sources/benbjohnson/wtf-dial.md)
-+ [Gary Bernhardt](./Sources/gbernhardt_rules.md) from:
-  + [functional core / imperative shell](./Sources/gbernhardt/bernhardt-functional-core-imperative-shell.md)
-+ [Mat Ryer](./Sources/matryer_rules.md) from:
-  + [How I Write HTTP Services in Go after 13 years](https://grafana.com/blog/how-i-write-http-services-in-go-after-13-years/)
-+ [Michael Feathers](./Sources/mfeathers_rules.md) from:
-  + [YOW 2016 Testing Patience](./Sources/mfeathers/yow-2016-michael-feathers-testing-patience.md)
-  + [Geekfest Testing Patience](./Sources/mfeathers/geekfest-michael-feathers-testing-patience.md)
-  + [Testing Patience Slides](./Sources/mfeathers/Feathers-TestingPatience.pdf)
-+ [Mitchell Hashimoto](./Sources/mitchellh_rules.md) from:
-  + [GopherCon 2017 Advanced Testing with Go](https://www.youtube.com/watch?v=8hQG7QlcLBk) 
-  + [GopherCon 2017 Advanced Testing with Go Slides](./Sources/mitchellh/Advanced_Testing_with_Go.pdf)
-+ [Martin Kleppmann](./Sources/kleppmann_rules.md) from:
-  + [Designing Data-Intensive Applications, 2nd Edition](https://www.oreilly.com/library/view/designing-data-intensive-applications/9781098119058/)
-+ [John Ousterhout](./Sources/ousterhout_rules.md) from:
-  + [A Philosophy of Software Design, 2nd Edition](https://www.amazon.com/dp/173210221X) 
-
-The following resources are highly recommended, but are not yet incorporated into the distillation.
-
 ### Data Science Resources
 
 There's a HUGE component that is more psychological: e.g., how to ask "good" questions, how to design data products with the end user in mind. One perspective on DS that has always resonated with me is that it's fundamentally about getting really good at the following translational cycle of converting:
@@ -60,7 +30,6 @@ Other stuff by Roger Peng is also really good: like the Not So Standard Deviatio
 
 Helps data professionals communicate insights effectively, considering audience psychology and cognitive load.
 
-
 ##### "How to Measure Anything" (2007) – Douglas Hubbard
 
 Teaches how to frame business problems as measurable data questions, even when dealing with uncertainty.
@@ -75,13 +44,66 @@ Focuses on the cognitive biases and psychology of interpreting data, helping dat
 
 Explores how people misinterpret visualizations, helping data scientists design for clarity and minimize bias.
 
+## Statistics & Mathematics
 
 ##### "Mostly Harmless Econometrics" (Angrist & Pischke, 2008) - [free pdf]
 
 This is a statistics textbook. But it's fairly accessible. And it's really good for thinking critically about causality vs. correlation (especially in business contexts where we aren't always running causal experiments).
 
+
 ##### “Never Split the Difference” – Chris Voss
 
 A FBI Hostage negotiator describes how to ask better questions and figure out what people really need
 
+## Statistics & Mathematics
+
+### [*Mostly Harmless Econometrics*](soft_skills/recrut_econometrics_book.md)
+
+Angrist, Joshua D. and Jörn-Steffen Pischke. *Mostly Harmless Econometrics: An Empiricist's Companion*. Princeton University Press, 2008. ISBN 978-0-691-12035-5.
+
+---
+
+## Soft Skills & Communication
+
+### [*Never Split the Difference*](../soft_skills/never_split_the_difference_book.md)
+
+Voss, Chris and Tahl Raz. *Never Split the Difference: Negotiating as If Your Life Depended on It*. Harper Business, 2016. ISBN 978-0-062-40780-1. — Distillation: [soft_skills/never_split_difference_rules.md](soft_skills/never_split_difference_rules.md)
+
+## Data Science & Machine Learning (9)
+
+### [*The Art of Data Science*](./art_of_data_science_book.md)
+
+Peng, Roger D. and Elizabeth Matsui. *The Art of Data Science: A Guide for Anyone Who Works with Data*. Leanpub, 2015.
+
+### [*Storytelling with Data*](./storytelling_with_data_book.md)
+
+Knaflic, Cole Nussbaumer. *Storytelling with Data: A Data Visualization Guide for Business Professionals*. Wiley, 2015. ISBN 978-1-119-00225-3.
+
+### [*How to Measure Anything* (2nd ed.)](./HowToMeasureAnythingEd2DouglasWHubbard_book.md)
+
+Hubbard, Douglas W. *How to Measure Anything: Finding the Value of Intangibles in Business*, 2nd ed. Wiley, 2010. ISBN 978-0-470-53939-9.
+
+### [*The Data Engineering Cookbook*](./data_engineering_cookbook_book.md)
+
+Kretz, Andreas. *The Data Engineering Cookbook: Mastering the Plumbing of Data Science*. 2019.
+
+### [*Mathematics for Machine Learning*](./mathematics_for_machine_learning_book.md)
+
+Deisenroth, Marc Peter, A. Aldo Faisal, and Cheng Soon Ong. Cambridge University Press, 2020. ISBN 978-1-108-47004-9.
+
+### [*10 Things You Need to Know About BERT and the Transformer Architecture*](./nlp_and_transformer_architecture_book.md)
+
+Horan, Cathal. Neptune.ai Blog, March 29, 2021.
+
+### [*Big Book of Machine Learning Use Cases* (2nd ed.)](./big_book_of_machine_learning_use_cases_2nd_ed_book.md)
+
+Databricks. 2022.
+
+### [*A Compact Guide to Large Language Models*](../misc/compact-guide-to-large-language-models_book.md)
+
+Databricks. 2023.
+
+### [*AI Assisted Programming*](../misc/ai_assisted_programming_book.md)
+
+Feathers, Michael. n.d.
 

@@ -1,0 +1,524 @@
+# All settings can be found here https://github.com/golangci/golangci-lint/blob/HEAD/.golangci.reference.yml
+version: "2"
+# golangci-lint configuration for a climax application.
+# Enforces the guidelines in rules.md and spec.md.
+
+formatters:
+  enable:
+    - golines
+    - gofumpt
+    - gci
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/StevenACoffman)
+    golines:
+      # Target maximum line length.
+      # Default: 100
+      max-len: 100
+      shorten-comments: true
+  exclusions:
+    paths:
+      - generated
+      - node_modules
+
+linters:
+  default: none
+  enable:
+    # ── correctness ──────────────────────────────────────────────────────────
+    - errcheck        # all errors must be handled
+    - govet           # go vet checks
+    - staticcheck     # SA/S/QF/ST checks
+    - ineffassign     # detect ineffectual assignments
+    - unused          # detect unused code
+    - reassign        # no reassigning package-level sentinels (io.EOF, Err*)
+    - nilerr          # don't return nil on a non-nil error value
+    - nilnil          # never return (nil, nil) — summary_rules.md §3
+    - wrapcheck       # errors from external packages must be wrapped — summary_rules.md §3
+    - errorlint       # use errors.Is/As; never type-assert on errors — summary_rules.md §3
+    - bidichk         # detect bidirectional Unicode control characters (trojan-source)
+    - durationcheck   # detect time.Duration * time.Duration multiplications
+    - wastedassign    # detect assignments whose value is never read before overwrite
+    - predeclared     # warn when a name shadows a predeclared identifier (len, cap, error, …)
+    - asasalint       # detect misuse of ...[]any arguments to fmt.Print-style functions
+    - bodyclose       # HTTP response bodies must be closed — summary_rules.md §7
+    - rowserrcheck    # sql.Rows.Err() must be checked after iteration — summary_rules.md §8
+    - sqlclosecheck   # sql.Rows and sql.Stmt must be closed — summary_rules.md §8
+    - exhaustive      # switch on typed constants must cover all cases — summary_rules.md §3
+    - musttag         # structs used with encoding/* must have field tags — summary_rules.md §2/§7
+    # ── style / architecture ─────────────────────────────────────────────────
+    - revive          # general Go style (error-strings, exported, var-naming, …)
+    - errname         # sentinel errors named ErrFoo, not FooError — summary_rules.md §3
+    - gochecknoglobals # no package-level mutable state — rules.md
+    - gochecknoinits  # no init() functions — rules.md / summary_rules.md §10
+    - unparam         # detect unused function parameters
+    - funcorder       # exported funcs before unexported — spec.md / Ben Johnson
+    - decorder        # const/var/type/func declaration order — rules.md
+    - funlen          # keep functions short — rules.md
+    - maintidx        # maintainability index floor
+    - cyclop          # cyclomatic complexity cap — summary_rules.md §4/§15
+    - nestif          # deeply nested if statements obscure control flow — summary_rules.md §15
+    - iface           # minimal interfaces; accept iface, return concrete — rules.md
+    - interfacebloat  # interfaces must be narrow; flag those with too many methods — summary_rules.md §4
+    - gosec           # security checks
+    - gocritic        # extended diagnostic, performance, and style checks
+    - unconvert       # remove unnecessary type conversions
+    - asciicheck      # identifiers must be printable ASCII
+    - misspell        # detect typos in comments and string literals
+    - usestdlibvars   # use stdlib constants instead of string literals — summary_rules.md §13
+    - perfsprint      # fmt.Sprintf("…%w", err) silently drops wrapping — summary_rules.md §3
+    # ── observability ────────────────────────────────────────────────────────
+    - sloglint        # enforce structured logging discipline — summary_rules.md §14
+    - loggercheck     # enforce consistent key-value pairs in slog calls — summary_rules.md §14
+    # ── context ──────────────────────────────────────────────────────────────
+    - noctx           # no http.Get/Head without context
+    - contextcheck    # context must propagate through call chains
+    # ── testing ──────────────────────────────────────────────────────────────
+    - testpackage     # tests in package_test (black-box) — rules.md
+    - thelper         # t.Helper() at top of test helper funcs — rules.md / summary_rules.md §10
+    - tparallel       # enforce t.Parallel() in subtests; tests use t.TempDir() so isolation is safe
+    - testableexamples # Example* functions must have // Output: comments; go test silently skips examples without them
+    # ── dependency hygiene ───────────────────────────────────────────────────
+    - depguard        # ban CLI frameworks, test frameworks, ORMs, gob — spec.md / summary_rules.md §8/§10/§12
+    - forbidigo       # ban os.Exit outside main; ban fmt.Print* in cmds — spec.md
+    # ── nolint hygiene ───────────────────────────────────────────────────────
+    - nolintlint      # require specific, explained nolint directives
+
+  settings:
+
+    # ── cyclop ───────────────────────────────────────────────────────────────
+    # summary_rules.md §4/§15: limit cyclomatic complexity. Complements
+    # revive:cognitive-complexity (which weights nesting) — cyclomatic counts
+    # independent paths and catches flat chains of branches that cognitive
+    # complexity underweights.
+    cyclop:
+      max-complexity: 10
+      skip-tests: false
+
+    # ── decorder ─────────────────────────────────────────────────────────────
+    # rules.md: group declarations: const, var, type, func — in that order.
+    decorder:
+      dec-order:
+        - const
+        - var
+        - type
+        - func
+      disable-dec-order-check: false
+      disable-init-func-first-check: false
+
+    # ── errcheck ─────────────────────────────────────────────────────────────
+    # Suppress unactionable write errors: Write on an io.Writer (e.g. cmd.Stdout),
+    # WriteString/WriteByte on in-memory builders, and fmt.Fprintln used for
+    # diagnostic output. These functions document that their errors are safe to
+    # ignore in the normal case, and checking them produces noise without safety benefit.
+    errcheck:
+      exclude-functions:
+        - (io.Writer).Write
+        - (http.ResponseWriter).Write
+        - (*bytes.Buffer).WriteByte
+        - (*strings.Builder).WriteByte
+        - (*strings.Builder).WriteString
+        - io.Copy
+        - io.WriteString
+        - fmt.Fprintln
+
+    # ── errorlint ────────────────────────────────────────────────────────────
+    # summary_rules.md §3: never type-assert on errors directly; always use
+    # errors.Is / errors.As. Comparing errors with == misses wrapped errors.
+    errorlint:
+      errorf: true        # flag fmt.Errorf without %w when wrapping is needed
+      errorf-multi: true  # flag multiple %w verbs (only one allowed per Go spec)
+      asserts: true       # flag direct type assertions on error values
+      comparison: true    # flag == and != comparisons with sentinel error values
+
+    # ── exhaustive ───────────────────────────────────────────────────────────
+    # summary_rules.md §3: switch statements on typed constants (e.g. error domain
+    # codes) must be exhaustive. A default: case satisfies the requirement when
+    # a true catch-all is intentional.
+    exhaustive:
+      default-signifies-exhaustive: true
+
+    # ── funlen ───────────────────────────────────────────────────────────────
+    # rules.md: functions should be short and focused.
+    funlen:
+      lines: 60
+      statements: 40
+
+    # ── gocritic ─────────────────────────────────────────────────────────────
+    # Enable all three tag groups for broad coverage. Disabled checks are
+    # suppressed because they are stylistically opinionated without a clear
+    # correctness benefit or conflict with other enforced rules:
+    #   appendAssign      — flags `a, b = append(a, …), append(b, …)`; common idiom
+    #   unnamedResult     — conflicts with cases where named returns aid clarity
+    #   paramTypeCombine  — parameter grouping is a formatting preference, not a bug
+    #   commentedOutCode  — dead code is caught by unused/staticcheck; this is noisy
+    #   sprintfQuotedString — `fmt.Sprintf("%q", s)` is clearer than strconv.Quote for some uses
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+      disabled-checks:
+        - appendAssign
+        - unnamedResult
+        - paramTypeCombine
+        - commentedOutCode
+        - sprintfQuotedString
+
+    # ── govet ────────────────────────────────────────────────────────────────
+    # Enable analyzers that are off by default but catch real bugs:
+    #   nilness      — detects impossible nil comparisons and nil dereferences
+    #   unusedwrite  — detects writes to variables whose value is never subsequently read
+    #   unusedresult — detects ignored return values of functions annotated //noescape
+    #   sortslice    — detects sort.Slice calls whose less function references
+    #                  the wrong index variable (a common copy-paste error)
+    #   appends      — detects append calls whose result is never used
+    #   lostcancel   — context.WithCancel cancel func not called; goroutine/resource leak
+    #   httpresponse — detects incorrect use of http.ResponseWriter (e.g. write after header)
+    #   stdmethods   — checks that well-known method signatures (Error, String) are standard
+    govet:
+      enable:
+        - nilness
+        - unusedwrite
+        - unusedresult
+        - sortslice
+        - appends
+        - lostcancel
+        - httpresponse
+        - stdmethods
+
+    # ── interfacebloat ───────────────────────────────────────────────────────
+    # summary_rules.md §4: "define the narrowest interface that satisfies your
+    # need." An interface with more than 7 methods is a sign that multiple
+    # concerns have been merged; split it into focused role interfaces.
+    interfacebloat:
+      max-methods: 7
+
+    # ── loggercheck ──────────────────────────────────────────────────────────
+    # summary_rules.md §14: structured logging calls must use balanced key-value
+    # pairs. Enable slog only; disable other logger types not used in this project.
+    loggercheck:
+      slog: true
+      kitlog: false
+      klog: false
+      logr: false
+      zap: false
+
+    # ── maintidx ─────────────────────────────────────────────────────────────
+    # Flag functions with a maintainability index below 20 (golangci-lint default).
+    maintidx:
+      under: 20
+
+    # ── nestif ───────────────────────────────────────────────────────────────
+    # summary_rules.md §15: "make code obvious". summary_rules.md §4: "return early
+    # to reduce nesting." Deep nesting is a direct indicator of hidden complexity.
+    nestif:
+      min-complexity: 5
+
+    # ── nilnil ───────────────────────────────────────────────────────────────
+    nilnil:
+      detect-opposite: true  # also flag (non-nil value, non-nil error)
+
+    # ── nolintlint ───────────────────────────────────────────────────────────
+    nolintlint:
+      allow-unused: false
+      require-explanation: true
+      require-specific: true
+
+    # ── perfsprint ───────────────────────────────────────────────────────────
+    # Only enable errorf: fmt.Sprintf("…%w", err) silently drops wrapping and
+    # produces a non-wrapped error — a correctness bug (summary_rules.md §3).
+    # Other perfsprint checks (strconcat, sprintf1, int-conversion) fire on
+    # idiomatic code and are disabled to reduce noise.
+    perfsprint:
+      int-conversion: false
+      err-error: false
+      errorf: true
+      sprintf1: false
+      strconcat: false
+
+    # ── reassign ─────────────────────────────────────────────────────────────
+    # rules.md: never reassign io.EOF or sentinel package errors.
+    reassign:
+      patterns:
+        - "EOF"
+        - "Err.*"
+
+    # ── sloglint ─────────────────────────────────────────────────────────────
+    # summary_rules.md §14: structured logging must use key-value pairs;
+    # never use the global slog logger (inject via parameter); context must
+    # always be threaded through to the logger for traceability.
+    sloglint:
+      no-global: true
+      context: "all"
+
+    # ── testpackage ──────────────────────────────────────────────────────────
+    # rules.md: use an external test package (foo_test) for black-box testing.
+    testpackage:
+      skip-regexp: (export|internal)_test\.go
+      allow-packages:
+        - main
+
+    # ── thelper ──────────────────────────────────────────────────────────────
+    # rules.md / summary_rules.md §10: test helper functions must call t.Helper()
+    # as their first statement so failures point to the call site, not the helper.
+    thelper:
+      test:
+        first: true
+        name: true
+        begin: true
+      benchmark:
+        first: true
+        name: true
+        begin: true
+
+    # ── iface ────────────────────────────────────────────────────────────────
+    # rules.md: define the narrowest interface that satisfies your need.
+    # Accept interfaces, return concrete types.
+    iface:
+      enable:
+        - identical  # two interfaces in the same package share identical method sets
+        - unused     # interface is defined but never referenced
+        - opaque     # func always returns one concrete type; return concrete instead
+
+    # ── wrapcheck ────────────────────────────────────────────────────────────
+    # rules.md: errors from external packages must carry context via wrapping.
+    # Standard wrapping helpers are already in the default ignore list.
+    wrapcheck:
+      extra-ignore-sigs:
+        - .Errorf(
+        - fmt.Errorf(
+
+    # ── depguard ─────────────────────────────────────────────────────────────
+    # spec.md: climax uses its own command pattern; no third-party CLI frameworks.
+    # summary_rules.md §10: use stdlib testing only; no test frameworks.
+    # summary_rules.md §8: no ORM; use database/sql directly.
+    # summary_rules.md §12: no language-native serialization (encoding/gob) across
+    #   service boundaries; use JSON, Protobuf, or another self-describing format.
+    depguard:
+      rules:
+        no-cli-frameworks:
+          deny:
+            - pkg: "github.com/spf13/cobra"
+              desc: "climax uses its own command pattern; do not import cobra"
+            - pkg: "github.com/urfave/cli"
+              desc: "climax uses its own command pattern; do not import urfave/cli"
+            - pkg: "github.com/spf13/pflag"
+              desc: "use the standard library flag package"
+            - pkg: "github.com/spf13/viper"
+              desc: "use standard library or explicit config structs"
+        no-test-frameworks:
+          # summary_rules.md §10: stdlib testing only; no assertion libraries,
+          # mocking frameworks, or BDD suites. These add dependency weight and
+          # obscure test failures behind framework indirection.
+          files:
+            - "*_test.go"
+          deny:
+            - pkg: "github.com/stretchr/testify"
+              desc: "use stdlib testing; testify is banned — summary_rules.md §10"
+            - pkg: "github.com/onsi/gomega"
+              desc: "use stdlib testing; gomega is banned — summary_rules.md §10"
+            - pkg: "github.com/onsi/ginkgo"
+              desc: "use stdlib testing; ginkgo is banned — summary_rules.md §10"
+            - pkg: "github.com/golang/mock"
+              desc: "use stdlib testing; gomock is banned — summary_rules.md §10"
+            - pkg: "go.uber.org/mock"
+              desc: "use stdlib testing; uber-mock is banned — summary_rules.md §10"
+        no-orm:
+          # summary_rules.md §8: no ORM. Use database/sql directly so that
+          # queries are explicit, testable, and free from hidden N+1 surprises.
+          deny:
+            - pkg: "gorm.io/gorm"
+              desc: "use database/sql directly; no ORM — summary_rules.md §8"
+            - pkg: "github.com/go-gorm/gorm"
+              desc: "use database/sql directly; no ORM — summary_rules.md §8"
+            - pkg: "entgo.io/ent"
+              desc: "use database/sql directly; no ORM — summary_rules.md §8"
+        no-gob:
+          # summary_rules.md §12: never use encoding/gob across service boundaries.
+          # gob is Go-specific, not self-describing, and produces opaque wire formats
+          # that are impossible to inspect or consume from other languages.
+          # Use encoding/json, google.golang.org/protobuf, or similar instead.
+          deny:
+            - pkg: "encoding/gob"
+              desc: "do not use encoding/gob across service boundaries; use JSON or Protobuf — summary_rules.md §12"
+
+    # ── forbidigo ────────────────────────────────────────────────────────────
+    # spec.md: commands write to cmd.Stdout/cmd.Stderr; only main may call os.Exit.
+    # rules.md: use flag.NewFlagSet, never flag.Parse; no time.Sleep in tests; no t.Setenv.
+    # summary_rules.md §7: no global HTTP state (DefaultClient, DefaultServeMux);
+    #   http.ListenAndServe uses DefaultServeMux and has no timeout configuration.
+    # summary_rules.md §14: use slog for structured logging; never use stdlib log.
+    # summary_rules.md §18: flag.ExitOnError and flag.PanicOnError call os.Exit/panic
+    #   on parse failure; use flag.ContinueOnError so callers control error handling.
+    # summary_rules.md §11: global rand.* functions share process-wide state and
+    #   make tests non-deterministic; inject a *rand.Rand or rand.Source instead.
+    # summary_rules.md §10: never use runtime.Caller or os.Getwd to compute
+    #   fixture paths; use paths relative to the test file via testdata/ conventions.
+    forbidigo:
+      forbid:
+        - pattern: "^os\\.Exit$"
+          msg: "only main() may call os.Exit; commands must return errors"
+        - pattern: "^fmt\\.Print(ln|f)?$"
+          msg: "write to cmd.Stdout or cmd.Stderr instead of fmt.Print*"
+        - pattern: "^log\\.(Print|Fatal|Panic|New|Default|SetOutput|SetFlags|SetPrefix)"
+          msg: "use slog for structured logging; stdlib log is banned — summary_rules.md §14"
+        - pattern: "^flag\\.Parse$"
+          msg: "use flag.NewFlagSet scoped to the command function; never call flag.Parse directly"
+        - pattern: "^flag\\.ExitOnError$"
+          msg: "use flag.ContinueOnError; ExitOnError calls os.Exit on parse failure — summary_rules.md §18"
+        - pattern: "^flag\\.PanicOnError$"
+          msg: "use flag.ContinueOnError; PanicOnError panics on parse failure — summary_rules.md §18"
+        - pattern: "^time\\.Sleep$"
+          msg: "do not use time.Sleep in tests; use a channel or sync primitive instead"
+        - pattern: "\\.Setenv$"
+          msg: "do not use t.Setenv; pass environment via a getenv parameter instead"
+        - pattern: "^rand\\.(Intn|Int|Int63|Int63n|Int31|Int31n|Float64|Float32|Perm|Shuffle|Read|Seed|IntN|Int32|Int32N|Int64|Int64N|Uint32|Uint32N|Uint64|Uint64N|NormFloat64|ExpFloat64)$"
+          msg: "inject a *rand.Rand instead of using global rand.*; global state makes tests non-deterministic — summary_rules.md §11"
+        - pattern: "^runtime\\.Caller$"
+          msg: "do not use runtime.Caller to compute fixture paths; use testdata/ relative to the test — summary_rules.md §10"
+        - pattern: "^os\\.Getwd$"
+          msg: "do not use os.Getwd to compute fixture paths; use testdata/ relative to the test — summary_rules.md §10"
+        - pattern: "^http\\.DefaultClient$"
+          msg: "do not use http.DefaultClient; construct an *http.Client with explicit timeouts — summary_rules.md §7"
+        - pattern: "^http\\.DefaultServeMux$"
+          msg: "do not use http.DefaultServeMux; use http.NewServeMux() — summary_rules.md §7"
+        - pattern: "^http\\.ListenAndServe$"
+          msg: "do not use http.ListenAndServe; construct an http.Server with read/write timeouts — summary_rules.md §7"
+      analyze-types: true
+
+    # ── gosec ────────────────────────────────────────────────────────────────
+    gosec: {}
+
+    # ── revive ───────────────────────────────────────────────────────────────
+    # rules.md: error strings must not be capitalised or end with punctuation;
+    # exported symbols must have doc comments; follow standard Go naming.
+    # summary_rules.md §3/§4: use errors.New over fmt.Errorf where no wrapping
+    # is needed; keep cognitive complexity low; errors are the last return value.
+    revive:
+      severity: warning
+      rules:
+        - name: error-strings          # "must not be capitalized or end with punctuation"
+          severity: error
+          disabled: false
+        - name: exported               # exported symbols must have doc comments
+          severity: error
+          disabled: false
+          arguments:
+            - "disableStutteringCheck"
+        - name: var-naming             # standard Go naming conventions
+          severity: error
+          disabled: false
+        - name: indent-error-flow      # early return instead of else after error
+          severity: warning
+          disabled: false
+        - name: unused-parameter       # remove parameters that are never read
+          severity: warning
+          disabled: false
+        - name: unnecessary-stmt       # remove redundant statements
+          severity: warning
+          disabled: false
+        - name: context-as-argument    # context.Context must be the first parameter
+          severity: error
+          disabled: false
+        - name: context-keys-type      # context keys must be unexported named types
+          severity: error
+          disabled: false
+        - name: deep-exit              # os.Exit only in main / init — rules.md
+          severity: error
+          disabled: false
+        - name: bare-return            # no naked returns
+          severity: error
+          disabled: false
+        - name: early-return           # return early to reduce nesting — summary_rules.md §15
+          severity: warning
+          disabled: false
+        - name: package-comments       # packages must have a doc comment
+          severity: warning
+          disabled: false
+        - name: cognitive-complexity   # cap function cognitive complexity — summary_rules.md §4
+          severity: warning
+          disabled: false
+          arguments:
+            - 15
+        - name: use-errors-new         # prefer errors.New over fmt.Errorf when not wrapping — summary_rules.md §3
+          severity: warning
+          disabled: false
+        - name: error-return           # error must be the last return value — summary_rules.md §3
+          severity: error
+          disabled: false
+        - name: redefines-builtin-id   # never shadow len, cap, error, etc. — summary_rules.md §13
+          severity: error
+          disabled: false
+        - name: struct-tag             # struct field tags must be well-formed — summary_rules.md §2
+          severity: error
+          disabled: false
+        - name: use-any                # prefer any over interface{} — modern Go idiom
+          severity: warning
+          disabled: false
+        - name: receiver-naming        # receiver names must be consistent within a type — summary_rules.md §13
+          severity: error
+          disabled: false
+        - name: time-naming            # time.Duration vars must not include unit suffix in name — summary_rules.md §13
+          severity: error
+          disabled: false
+        - name: unexported-return      # exported functions must not return unexported types — summary_rules.md §4
+          severity: error
+          disabled: false
+
+  exclusions:
+    rules:
+      # Test files: relax function-length, maintainability, and SQL-close checks.
+      - path: _test\.go
+        linters:
+          - funlen          # table-driven tests and helper setup can be long
+          - maintidx        # test files naturally score lower
+          - wrapcheck       # test code doesn't need to wrap every error
+          - gochecknoglobals # package-level test vars (e.g. golden files) are fine
+          - cyclop          # table-driven test dispatch inflates cyclomatic complexity
+          - nestif          # test setup legitimately nests assertions and subtests
+
+      # Tests may write to stdout/stderr for diagnostic output (t.Log is preferred
+      # but fmt.Print* remains acceptable for quick debugging). All other forbidigo
+      # rules (os.Exit, log.*, rand.*, time.Sleep, etc.) remain active in tests.
+      - path: _test\.go
+        linters:
+          - forbidigo
+        text: "fmt\\.Print"
+
+      # TestMain conventionally calls os.Exit(m.Run()) to propagate the exit code.
+      # This is the stdlib-documented pattern and cannot be replaced with an error return.
+      - path: _test\.go
+        linters:
+          - forbidigo
+        text: "os\\.Exit"
+
+      # cmd/version/version.go: var Version must be a var (not const) so that
+      # -ldflags "-X .../cmd/version.Version=v1.2.3" can override it at link time.
+      # gochecknoglobals does not understand this idiom.
+      - path: cmd/version/version\.go$
+        linters:
+          - gochecknoglobals
+
+      # main.go: os.Exit(exitFail) is the correct and only call site.
+      - path: main\.go$
+        linters:
+          - forbidigo
+
+      # cmd/cmd.go dispatcher writes to io.Writer locals, not global stdout.
+      - path: cmd/cmd\.go$
+        linters:
+          - forbidigo
+
+      # cmd/cmd.go dispatcher must pass command errors through unwrapped; wrapping
+      # would prepend context to every command error, violating the spec's
+      # "<command>: <reason>" format.
+      - path: cmd/cmd\.go$
+        linters:
+          - wrapcheck
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

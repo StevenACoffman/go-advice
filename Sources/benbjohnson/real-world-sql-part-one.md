@@ -7,7 +7,7 @@ Ben Johnson
 
 26 Jan 2021
 
-](/web/20250809025020/https://www.gobeyond.dev/author/benbjohnson/)
+](https://web.archive.org/web/20250809025020/https://www.gobeyond.dev/author/benbjohnson/)
 
 *   [](https://web.archive.org/web/20250809025020/https://twitter.com/share?text=Real-world%20SQL%20in%20Go%3A%20Part%20I&url=https://www.gobeyond.dev/real-world-sql-part-one/ "Share on Twitter")
 *   [](https://web.archive.org/web/20250809025020/https://www.facebook.com/sharer/sharer.php?u=https://www.gobeyond.dev/real-world-sql-part-one/ "Share on Facebook")
