@@ -828,7 +828,7 @@ feedback mechanism. Speed it up, cut it, or replace it. Do not enforce disciplin
 - Hardcode ports, paths, or timeouts as unoverridable constants in production code.
 - Define interfaces in the implementing package and export them for callers to use — define them at the point of use.
 - Create interfaces wider than the function actually needs.
-- Use `init()` to set global state that tests cannot override.
+- Use `init()` to set global state — `init()` runs unconditionally and its side effects cannot be suppressed or reset by tests.
 - Use `sync.Once` to initialize global singletons that tests need to reset — they become impossible to reinitialize.
 
 ### Table-driven tests
@@ -1743,7 +1743,7 @@ Check Cobra first — a project may have both, and Cobra takes precedence becaus
 | Rule | Rationale |
 |---|---|
 | Match the framework already in `go.mod`; do not introduce a new one | The spec follows the project, not the other way around |
-| No `init()` for registration | Explicit registration in the dispatcher is traceable |
+| No `init()` functions | `init()` runs unconditionally at startup before flag parsing, cannot be suppressed in tests, and has implicit cross-package ordering; register commands explicitly in `cmd/cmd.go` and initialize resources at the call site where they are needed |
 | One command per package (or file in the flat Cobra layout) | Factory function is the only public API |
 | Return `error`; never call `os.Exit` in a command | Only `main` controls exit codes |
 | `package cmd` is a dispatcher, not a binary | It is imported by `main`, not executed directly |
@@ -1772,9 +1772,14 @@ Use when `github.com/peterbourgon/ff/v4` is in `go.mod` (and Cobra is not). Each
 - Flag values are bound to `Config` fields in `New()`, **not** inside `exec`. `exec` reads already-parsed values; never call `Parse` inside `exec`.
 - `SetParent(parent.Flags)` **must** be called on every subcommand's flag set so parent flags (e.g. `--verbose`) work at any depth. `SetParent(nil)` is safe.
 - Write to `cfg.Stdout` / `cfg.Stderr`; never `os.Stdout` / `os.Stderr`.
-- Set `Exec: nil` (omit the field) on group-parent commands. `ff.ErrNoExec` is handled entirely by the dispatcher (it prints help and returns nil) — it never reaches `main`.
+- Every behavioural knob must be a registered flag on `cfg.Flags` — never use hard-coded values, package-level variables, or `os.Getenv` outside the flag set; they make settings invisible to `-h` and break the flags-first contract.
+- Return `root.ExitError(n)` from `exec` for a controlled non-zero exit without printing `"error: ..."` to stderr. Never call `os.Exit` inside command code; only `main()` calls `os.Exit` — after `stop()` releases the signal context.
+- Set `Exec: nil` (omit the field) on group-parent commands. They return `ff.ErrNoExec`; the dispatcher suppresses help output for it and returns the error as-is; `run()` in `main.go` treats it as success.
 - Post-parse initialization (API clients, DB connections, loggers) belongs in `cmd/cmd.go` between `r.Command.Parse(args)` and `r.Command.Run(ctx)`. Assign dependencies to fields on `root.Config` so all `exec` functions inherit them via embedding.
-- `ff.ErrHelp` is not a failure — `main` treats it as success with `errors.Is(err, ff.ErrHelp)`.
+- `ff.ErrHelp` and `ff.ErrNoExec` are not failures — `run()` in `main.go` handles both as success via a `switch` on the returned error.
+- `root.Config` holds `Stdin io.Reader` alongside `Stdout` and `Stderr`; `root.New` takes `(stdin io.Reader, stdout, stderr io.Writer)`. The dispatcher's `Run` signature is `Run(ctx, args, stdin, stdout, stderr)`. Pass `os.Stdin` from `main.go`; pass `strings.NewReader("")` in tests.
+- `main.go` uses `signal.NotifyContext` for signal-safe shutdown. `run()` returns an `int` exit code; `main()` calls `stop()` then `os.Exit(code)`. If `run()` called `os.Exit` directly, `stop()` would never execute, leaving the signal-handler goroutine running until the process terminated. `run()` is annotated `// run is intentionally separated from main to improve testability. Please preserve this comment.` to prevent it from being inlined into `main` during refactoring.
+- The version command (`cmd/version/`) uses `var Version = "dev"` — the one permitted package-level mutable variable in a command package. The Go linker's `-ldflags "-X <pkg>.Version=<val>"` can only override a `var`; a `const` or local variable is link-time immutable. Do not use `init()` to populate it; read `debug.ReadBuildInfo()` inside `exec` on demand.
 - The `climax` tool scaffolds new applications (`climax init`) and adds commands (`climax add`). The marker comments `// climax:name`, `// climax:root-pkg`, `// climax:imports`, and `// register new commands here` in `cmd/cmd.go` must not be removed.
 - If the application has no shared flags, omit `ff.NewFlagSet` and leave `cfg.Flags` nil; `ff` creates an empty flag set automatically and `--help` still works. This is the default generated by `climax init`; uncomment the `ff.NewFlagSet` line when adding the first shared flag.
 
@@ -1815,12 +1820,14 @@ Use when `github.com/spf13/cobra` is in `go.mod`. Subcommands are `*cobra.Comman
 | Shared dependencies | Not supported | Fields on `root.Config` via struct embedding | Package-level vars in `cmd/root.go`; initialized in `PersistentPreRunE`; passed to subcommands as getter functions |
 | Post-parse init | Not supported | Between `Parse()` and `Run()` in `cmd/cmd.go` | `PersistentPreRunE` on root (watch closest-ancestor trap) |
 | Hook lifecycle | None | Single `Exec` function | `PersistentPreRunE → PreRunE → RunE → PostRunE → PersistentPostRunE` |
-| `-h` / `--help` | `flag.ErrHelp` returned unwrapped; `main` exits 0 | `ff.ErrHelp` returned; `main` exits 0 | Cobra handles automatically |
-| No subcommand given | Dispatcher prints command list | Dispatcher prints help (via `ErrNoExec`); returns nil | Cobra prints help; returns nil |
-| Group parent commands | Not supported | `Exec: nil`; dispatcher handles `ErrNoExec` | `RunE: nil`; Cobra handles |
+| `-h` / `--help` | `flag.ErrHelp` returned unwrapped; `run()` exits 0 | `ff.ErrHelp` returned; `run()` exits 0 | Cobra handles automatically |
+| No subcommand given | Dispatcher prints command list | Dispatcher returns `ff.ErrNoExec`; `run()` treats as success | Cobra prints help; returns nil |
+| Group parent commands | Not supported | `Exec: nil`; returns `ff.ErrNoExec`; `run()` treats as success | `RunE: nil`; Cobra handles |
 | Argument validation | Manual | Manual | Built-in validators (`NoArgs`, `MinimumNArgs`, etc.) |
 | Dispatch key | Exact `UsageLine` (case-sensitive) | `Name` field (case-insensitive) | First word of `Use` (case-sensitive) |
-| Testability | Low — stdout not capturable | High — `cmd.Run` accepts `io.Writer` | High — `Execute(ctx, args, stdout, stderr)` |
+| Testability | Low — stdout not capturable | High — `cmd.Run` accepts `io.Reader`/`io.Writer`; stdin injectable | High — `Execute(ctx, args, stdout, stderr)` |
+| Signal handling | Manual | `signal.NotifyContext` in `main`; `run()` returns `int`; `main()` calls `stop()` then `os.Exit` | Manual |
+| Controlled exit without error message | `os.Exit` in command (avoid) | `root.ExitError(n)` returned from `exec` | `os.Exit` in command (avoid) |
 | Shell completions | None | None | Built-in |
 | Man page / doc generation | None | None | Built-in (`doc.GenManTree`, `doc.GenMarkdownTree`) |
 | Code scaffolding | None | `climax` tool | None |
@@ -1834,7 +1841,7 @@ Use when `github.com/spf13/cobra` is in `go.mod`. Subcommands are `*cobra.Comman
 - [ ] Subpackages named after dependencies; each imports root, root imports none
 - [ ] Subpackages never import each other
 - [ ] Binaries under `cmd/<name>/main.go`; no business logic in `main`
-- [ ] No global variables; dependencies injected explicitly
+- [ ] No global variables; dependencies injected explicitly (`var Version = "dev"` in `cmd/version/` is the one permitted exception)
 - [ ] One major concept per file; ≤ 1000 SLOC per file
 
 ### Domain types
@@ -1974,8 +1981,12 @@ Use when `github.com/spf13/cobra` is in `go.mod`. Subcommands are `*cobra.Comman
 - [ ] **Pattern A:** All commands registered in `cmd/cmd.go` commands slice; no `init()`
 - [ ] **Pattern B:** `SetParent(parent.Flags)` called on every subcommand's flag set (including when parent has no flags — `SetParent(nil)` is safe)
 - [ ] **Pattern B:** I/O via `cfg.Stdout`/`cfg.Stderr` only; never `os.Stdout`/`os.Stderr`
-- [ ] **Pattern B:** `ff.ErrNoExec` absorbed by dispatcher (prints help, returns nil) — never reaches `main`
+- [ ] **Pattern B:** Dispatcher returns `ff.ErrNoExec` as-is; `run()` in `main.go` treats it as success — dispatcher does not print help for this case
 - [ ] **Pattern B:** Flag values bound in `New()`, not in `exec`; `exec` reads already-parsed values
+- [ ] **Pattern B:** Every configurable knob is a registered flag on `cfg.Flags`; no `os.Getenv` or hard-coded values outside the flag set
+- [ ] **Pattern B:** `root.ExitError(n)` returned from `exec` for controlled non-zero exits; never `os.Exit` inside command code
+- [ ] **Pattern B:** `cmd.Run` accepts `stdin io.Reader`; pass `os.Stdin` from `main.go`, `strings.NewReader("")` in tests
+- [ ] **Pattern B:** `main.go` uses `signal.NotifyContext`; `run()` returns `int`; `main()` calls `stop()` then `os.Exit(code)` — `os.Exit` inside `run()` would bypass `stop()`, leaving the signal-handler goroutine running
 - [ ] **Pattern B:** Climax marker comments preserved in `cmd/cmd.go`: `// climax:name`, `// climax:root-pkg`, `// climax:imports`, `// register new commands here`
 - [ ] **Pattern C:** No package-level `var rootCmd`; flag-destination variables declared inside `NewCommand`
 - [ ] **Pattern C:** `RunE` used (not `Run`); `Args` validator set explicitly on every command
