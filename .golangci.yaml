@@ -95,7 +95,6 @@ linters:
     # complexity underweights.
     cyclop:
       max-complexity: 10
-      skip-tests: false
 
     # ── decorder ─────────────────────────────────────────────────────────────
     # rules.md: group declarations: const, var, type, func — in that order.
@@ -129,7 +128,7 @@ linters:
     # errors.Is / errors.As. Comparing errors with == misses wrapped errors.
     errorlint:
       errorf: true        # flag fmt.Errorf without %w when wrapping is needed
-      errorf-multi: true  # flag multiple %w verbs (only one allowed per Go spec)
+      errorf-multi: true  # permit multiple %w verbs (valid since Go 1.20 via errors.Join)
       asserts: true       # flag direct type assertions on error values
       comparison: true    # flag == and != comparisons with sentinel error values
 
@@ -194,7 +193,7 @@ linters:
     # need." An interface with more than 7 methods is a sign that multiple
     # concerns have been merged; split it into focused role interfaces.
     interfacebloat:
-      max-methods: 7
+      max: 7
 
     # ── loggercheck ──────────────────────────────────────────────────────────
     # summary_rules.md §14: structured logging calls must use balanced key-value
@@ -251,7 +250,7 @@ linters:
     # never use the global slog logger (inject via parameter); context must
     # always be threaded through to the logger for traceability.
     sloglint:
-      no-global: true
+      no-global: "all"
       context: "all"
 
     # ── testpackage ──────────────────────────────────────────────────────────
